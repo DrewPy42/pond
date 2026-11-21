@@ -31,3 +31,7 @@ Newest at the bottom. Add an entry whenever a real decision changes the design.
 | 2026-11-20 | **Vuetify 3** as the only UI component library; brand palette as a Vuetify theme | Tables, forms, nav drawer and dark mode out of the box; gloxV's Bootstrap + Vuetify mix isn't repeated |
 | 2026-11-20 | Brand green/teal are accents only; navy text on green buttons; dark teal links; contrast-safe money colors | The bright brand colors score ~2.2:1 with white text, below the 4.5:1 WCAG minimum |
 | 2026-11-20 | Redraw the WibbitWorks logo as vector SVG; add a Pond product mark | The existing logo is a raster PNG on a cream background, unusable on gray or dark themes |
+| 2026-11-20 | M0 toolchain: pnpm 12, Node 22 LTS floor, TypeScript ~5.9 (vue-tsc doesn't support TS 7), Vuetify ^3 (the registry default is now 4), Vitest, ESLint + Prettier, uuid for UUIDv7 | Matches the stack in CLAUDE.md; pinned where the latest major breaks a stated rule or tool |
+| 2026-11-20 | `settings.scope_id` is `NOT NULL DEFAULT ''` (empty = global) instead of nullable | SQLite treats NULLs as distinct in a primary key, so a nullable column would allow duplicate global settings |
+| 2026-11-20 | Theme `error` fill is `#EE6F6F`, a lightened brand red; `#E85A5A` stays for icons and borders | Navy text on `#E85A5A` is 4.15:1, below WCAG AA; a unit test now guards every text/background pair |
+| 2026-11-20 | gloxV has no brand tokens to port (its Vuetify setup uses defaults); the palette in CLAUDE.md is the source of truth | Closes the open item in `scope-v1.md` |
