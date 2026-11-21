@@ -1,0 +1,98 @@
+import type { NextFunction, Request, RequestHandler, Response } from 'express'
+import { and, eq } from 'drizzle-orm'
+import { csrfMatches, hasRecentReauth, loadSession } from '../auth/sessions.js'
+import type { Db } from '../db/index.js'
+import { spaceMembers, spaces } from '../db/schema.js'
+import { CSRF_COOKIE, SESSION_COOKIE, parseCookies, sendError } from '../http.js'
+import type { Role } from '../types.js'
+
+const ROLE_RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 }
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+/** Loads the session (if any) onto `req.auth`. Never rejects by itself. */
+export function sessionMiddleware(db: Db, now: () => Date): RequestHandler {
+  return (req, _res, next) => {
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE]
+    if (token) req.auth = loadSession(db, token, now()) ?? undefined
+    next()
+  }
+}
+
+/**
+ * Double-submit CSRF on state-changing requests that carry a session: the `x-csrf-token`
+ * header must equal the CSRF cookie and match the hash stored with the session. SameSite=Strict
+ * on the session cookie is the first line of defense; this is the second.
+ */
+export const csrfGuard: RequestHandler = (req, res, next) => {
+  if (SAFE_METHODS.has(req.method) || !req.auth) return next()
+  const header = req.header('x-csrf-token')
+  const cookie = parseCookies(req.headers.cookie)[CSRF_COOKIE]
+  if (!header || header !== cookie || !csrfMatches(req.auth.csrfHash, header)) {
+    return sendError(res, 403, 'csrf_failed')
+  }
+  next()
+}
+
+export interface RequireAuthOptions {
+  /** Allow admins who have not finished TOTP enrollment (only the enrollment routes). */
+  allowPendingTotp?: boolean
+}
+
+/** 401 without a session. Admins must have TOTP enabled (security.md) before doing anything. */
+export function requireAuth(opts: RequireAuthOptions = {}): RequestHandler {
+  return (req, res, next) => {
+    if (!req.auth) return sendError(res, 401, 'unauthenticated')
+    if (req.auth.user.isAdmin && !req.auth.user.totpEnabled && !opts.allowPendingTotp) {
+      return sendError(res, 403, 'totp_enrollment_required')
+    }
+    next()
+  }
+}
+
+export const requireAdmin: RequestHandler = (req, res, next) => {
+  if (!req.auth) return sendError(res, 401, 'unauthenticated')
+  if (!req.auth.user.isAdmin) return sendError(res, 403, 'forbidden')
+  next()
+}
+
+/**
+ * The single place Space access is decided. Resolves `:spaceId` against `space_members`:
+ *  - not a member (and not an admin), or no such Space: 404, so existence doesn't leak
+ *  - member below `minRole`: 403
+ *  - admin: treated as owner everywhere
+ * Handlers read the result from `req.space`.
+ */
+export function requireSpace(db: Db, minRole: Role): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const auth = req.auth
+    if (!auth) return sendError(res, 401, 'unauthenticated')
+    const spaceId = req.params.spaceId
+    if (typeof spaceId !== 'string') return sendError(res, 404, 'not_found')
+
+    const space = db.select({ id: spaces.id }).from(spaces).where(eq(spaces.id, spaceId)).get()
+    if (!space) return sendError(res, 404, 'not_found')
+
+    let role: Role | null
+    if (auth.user.isAdmin) {
+      role = 'owner'
+    } else {
+      role =
+        db
+          .select({ role: spaceMembers.role })
+          .from(spaceMembers)
+          .where(and(eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, auth.user.id)))
+          .get()?.role ?? null
+    }
+    if (!role) return sendError(res, 404, 'not_found')
+    if (ROLE_RANK[role] < ROLE_RANK[minRole]) return sendError(res, 403, 'forbidden')
+    req.space = { id: spaceId, role }
+    next()
+  }
+}
+
+/** For sensitive actions (reveals, backups, security settings): password re-entered < 5 min ago. */
+export const requireRecentReauth: RequestHandler = (req, res, next) => {
+  if (!req.auth) return sendError(res, 401, 'unauthenticated')
+  if (!hasRecentReauth(req.auth.reauthAt)) return sendError(res, 403, 'reauth_required')
+  next()
+}

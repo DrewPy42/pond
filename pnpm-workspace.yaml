@@ -2,3 +2,6 @@ packages:
   - apps/*
   - packages/*
   - lilypads/*
+allowBuilds:
+  argon2: true
+  esbuild: true

@@ -1,11 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { coreNav } from '../router'
+import { useAuthStore } from '../stores/auth'
+import { useSpacesStore } from '../stores/spaces'
 
 const drawer = ref(true)
 const theme = useTheme()
 const isDark = () => theme.global.current.value.dark
+const auth = useAuthStore()
+const spaces = useSpacesStore()
+const router = useRouter()
+onMounted(() => spaces.load())
+
+async function signOut() {
+  await auth.logout()
+  spaces.reset()
+  await router.replace({ name: 'login' })
+}
+
 const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
 </script>
 
@@ -34,16 +48,20 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
 
   <v-app-bar flat color="surface" border="b">
     <v-app-bar-nav-icon aria-label="Toggle navigation" @click="drawer = !drawer" />
-    <!-- Space switcher: real data arrives with Spaces in M1. -->
     <v-select
       class="space-switcher ml-2"
       label="Space"
-      model-value="none"
-      :items="[{ title: 'No Spaces yet', value: 'none' }]"
+      :model-value="spaces.active?.id ?? 'none'"
+      :items="
+        spaces.spaces.length
+          ? spaces.spaces.map((s) => ({ title: s.name, value: s.id }))
+          : [{ title: 'No Spaces yet', value: 'none' }]
+      "
       density="compact"
       variant="outlined"
       hide-details
-      disabled
+      :disabled="spaces.spaces.length === 0"
+      @update:model-value="spaces.select($event)"
     />
     <v-spacer />
     <v-btn
@@ -54,6 +72,21 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
     >
       <v-icon :icon="isDark() ? 'mdi-weather-sunny' : 'mdi-weather-night'" />
     </v-btn>
+    <v-menu>
+      <template #activator="{ props }">
+        <v-btn
+          v-bind="props"
+          variant="text"
+          prepend-icon="mdi-account-circle-outline"
+          :aria-label="`Account menu for ${auth.user?.displayName}`"
+        >
+          {{ auth.user?.displayName }}
+        </v-btn>
+      </template>
+      <v-list>
+        <v-list-item prepend-icon="mdi-logout" title="Sign out" @click="signOut" />
+      </v-list>
+    </v-menu>
   </v-app-bar>
 
   <v-main>

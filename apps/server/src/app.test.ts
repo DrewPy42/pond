@@ -1,16 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
-import { createApp } from './app'
-import { createCrypto } from './crypto/index'
-import { openDb, runMigrations } from './db/index'
-import { createLogger } from './logger'
+import { makeEnv } from './testing'
 
-function makeApp() {
-  const db = openDb(':memory:')
-  runMigrations(db)
-  return createApp({ db, crypto: createCrypto(randomBytes(32)), log: createLogger('silent') })
-}
+const makeApp = () => makeEnv().app
 
 describe('app', () => {
   it('serves health with the schema version', async () => {
