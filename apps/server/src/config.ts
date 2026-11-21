@@ -7,6 +7,8 @@ const envSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   /** Everything persistent lives here: pond.db, keys/, files/, backups/ (see architecture.md). */
   POND_DATA_DIR: z.string().default('./data'),
+  /** Secure cookies. Defaults on in production; set false for plain-HTTP local dev. */
+  POND_COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
 
@@ -20,6 +22,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     port: e.PORT,
     host: e.HOST,
     logLevel: e.LOG_LEVEL,
+    cookieSecure: e.POND_COOKIE_SECURE
+      ? e.POND_COOKIE_SECURE === 'true'
+      : e.NODE_ENV === 'production',
     dataDir,
     dbPath: path.join(dataDir, 'pond.db'),
     keyPath: path.join(dataDir, 'keys', 'master.key'),

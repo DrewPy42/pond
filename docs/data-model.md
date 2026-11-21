@@ -13,9 +13,11 @@
 
 ### Identity and access
 
-**users**: `id`, `username` (unique), `display_name`, `email?`, `password_hash` (Argon2id), `totp_secret_enc?`, `is_admin`, `status` (active | disabled), `last_login_at`
+**users**: `id`, `username` (unique), `display_name`, `email?`, `password_hash` (Argon2id), `totp_secret_enc?`, `totp_enabled_at?` (null until the user proves a code; a secret with no `totp_enabled_at` is only pending enrollment), `is_admin`, `status` (active | disabled), `last_login_at`
 
-**sessions**: `id` (hash of the session token), `user_id`, `expires_at`, `last_seen_at`, `reauth_at?` (time of the last password re-entry, for reveals), `ip`, `user_agent`
+**recovery_codes**: `id`, `user_id`, `code_hash` (SHA-256), `used_at?`. Ten single-use codes per user, replaced when TOTP is enabled.
+
+**sessions**: `id` (hash of the session token), `user_id`, `csrf_hash` (hash of the paired CSRF token), `expires_at` (sliding 12 h idle window), `absolute_expires_at` (30 days from login), `last_seen_at`, `reauth_at?` (time of the last password re-entry, for reveals), `ip`, `user_agent`
 
 **spaces**: `id`, `name`, `type` (personal | business), `currency`, `archived_at?`
 
