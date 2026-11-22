@@ -58,4 +58,4 @@ Each milestone ends with working, tested software.
 
 - The gloxV theme tokens and logo need to be pulled from `~/Sites/gloxV` (M0).
 - What exactly the Personal Finance pad includes beyond budgets and goals (before M5).
-- SimpleFIN's current request limits and history depth, checked against a real account (M3).
+- SimpleFIN's current request limits and history depth, checked against a real account (M3). The protocol page documents no limits; Pond is conservative (a 90-day first pull, 12-hour default interval, manual sync at most every 5 minutes) until this is confirmed with a real account.

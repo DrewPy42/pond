@@ -56,20 +56,14 @@
       "indexes": {
         "settings_key_idx": {
           "name": "settings_key_idx",
-          "columns": [
-            "key"
-          ],
+          "columns": ["key"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "settings_scope_scope_id_key_pk": {
-          "columns": [
-            "scope",
-            "scope_id",
-            "key"
-          ],
+          "columns": ["scope", "scope_id", "key"],
           "name": "settings_scope_scope_id_key_pk"
         }
       },

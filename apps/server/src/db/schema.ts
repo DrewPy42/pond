@@ -145,10 +145,34 @@ export const auditLog = sqliteTable(
 // `connection_id` / `import_batch_id` arrive with SimpleFIN (M3) and CSV import (M4) as
 // ADD COLUMN migrations, because those parent tables don't exist yet.
 
+// ---------- SimpleFIN connections (M3) ----------
+
+export const connections = sqliteTable('connections', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  /**
+   * The SimpleFIN Access URL (it contains credentials), encrypted with the core crypto module.
+   * Null once the connection is revoked. Never returned from the API, never logged.
+   */
+  accessUrlEnc: text('access_url_enc'),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => users.id),
+  status: text('status', { enum: ['active', 'error', 'revoked'] })
+    .notNull()
+    .default('active'),
+  lastSyncedAt: text('last_synced_at'),
+  lastError: text('last_error'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+})
+
 export const accounts = sqliteTable(
   'accounts',
   {
     id: text('id').primaryKey(),
+    connectionId: text('connection_id').references(() => connections.id),
+    /** SimpleFIN's own account id. */
     externalId: text('external_id'),
     institutionName: text('institution_name'),
     name: text('name').notNull(),
@@ -177,7 +201,12 @@ export const accounts = sqliteTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index('accounts_space_idx').on(t.primarySpaceId)],
+  (t) => [
+    index('accounts_space_idx').on(t.primarySpaceId),
+    uniqueIndex('accounts_connection_external_unique')
+      .on(t.connectionId, t.externalId)
+      .where(sql`${t.externalId} is not null`),
+  ],
 )
 
 export const balanceSnapshots = sqliteTable(
@@ -241,6 +270,10 @@ export const transactions = sqliteTable(
     /** Cross-Space privacy (data-model.md): hides account name, total and other splits. */
     private: integer('private', { mode: 'boolean' }).notNull().default(false),
     needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
+    /** True once a person changed it; sync won't remove or overwrite what they edited. */
+    userEdited: integer('user_edited', { mode: 'boolean' }).notNull().default(false),
+    /** For a pending transaction that the bank replaced with a posted one: that posted one's id. */
+    supersededBy: text('superseded_by'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

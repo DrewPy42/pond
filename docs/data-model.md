@@ -27,6 +27,8 @@
 
 **connections**: `id`, `label`, `access_url_enc`, `created_by`, `status` (active | error | revoked), `last_synced_at?`, `last_error?`
 
+> **Built in M3:** `connections` (`access_url_enc` is nullable: it is cleared when a connection is revoked), `accounts.connection_id` with the `(connection_id, external_id)` unique index, and two bookkeeping columns on `transactions`: `user_edited` (true once a person changed it, so sync leaves their edits alone) and `superseded_by` (on a pending transaction the bank replaced with a posted one, the posted one's id).
+
 **accounts**: `id`, `connection_id?` (null for manual), `external_id?` (SimpleFIN account id), `institution_name?`, `name`, `nickname?`, `type` (checking | savings | credit_card | loan | brokerage | retirement | cash | property | other), `currency`, `primary_space_id?`, `is_manual`, `include_in_net_worth`, `sync_enabled`, `hidden`, `last_four?`, `archived_at?`
 - unique (`connection_id`, `external_id`)
 - Manual accounts work exactly like synced ones, minus sync.

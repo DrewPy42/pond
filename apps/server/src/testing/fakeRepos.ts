@@ -6,6 +6,7 @@ import {
   type AccountRecord,
   type BalanceSnapshotRecord,
   type CategoryRecord,
+  type ConnectionRecord,
   type NewSplit,
   type SplitRecord,
   type TransactionRecord,
@@ -34,6 +35,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
   const spaces = new Map<string, SpaceRecord>()
   const members = new Map<string, Role>() // key: `${spaceId}|${userId}`
   const audit: AuditRecord[] = []
+  const connections = new Map<string, ConnectionRecord>()
   const accounts = new Map<string, AccountRecord>()
   const balances = new Map<string, BalanceSnapshotRecord>()
   const categories = new Map<string, CategoryRecord>()
@@ -216,13 +218,42 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           .slice(0, limit),
     },
 
+    connections: {
+      create(c) {
+        if (!users.has(c.createdBy)) throw new MissingParentError('unknown user')
+        connections.set(c.id, { ...c, status: 'active', lastSyncedAt: null, lastError: null })
+      },
+      findById: (id) => connections.get(id),
+      list: () =>
+        [...connections.values()].sort(
+          (a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id),
+        ),
+      update(id, patch) {
+        const c = connections.get(id)
+        if (c) connections.set(id, { ...c, ...patch })
+      },
+    },
+
     accounts: {
       create(a) {
         if (a.primarySpaceId && !spaces.has(a.primarySpaceId))
           throw new MissingParentError('unknown space')
+        if (a.connectionId && !connections.has(a.connectionId)) {
+          throw new MissingParentError('unknown connection')
+        }
+        if (
+          a.connectionId &&
+          a.externalId &&
+          [...accounts.values()].some(
+            (x) => x.connectionId === a.connectionId && x.externalId === a.externalId,
+          )
+        ) {
+          throw new DuplicateError('account already synced')
+        }
         accounts.set(a.id, {
           id: a.id,
-          externalId: null,
+          connectionId: a.connectionId ?? null,
+          externalId: a.externalId ?? null,
           institutionName: a.institutionName ?? null,
           name: a.name,
           nickname: a.nickname ?? null,
@@ -231,7 +262,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           primarySpaceId: a.primarySpaceId ?? null,
           isManual: a.isManual ?? true,
           includeInNetWorth: a.includeInNetWorth ?? true,
-          syncEnabled: false,
+          syncEnabled: a.syncEnabled ?? false,
           hidden: a.hidden ?? false,
           lastFour: a.lastFour ?? null,
           archivedAt: null,
@@ -248,6 +279,14 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
         const a = accounts.get(id)
         if (a) accounts.set(id, { ...a, ...patch })
       },
+      findByExternal: (connectionId, externalId) =>
+        [...accounts.values()].find(
+          (a) => a.connectionId === connectionId && a.externalId === externalId,
+        ),
+      listForConnection: (connectionId) =>
+        [...accounts.values()]
+          .filter((a) => a.connectionId === connectionId)
+          .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
     },
 
     balances: {
@@ -335,6 +374,8 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           status: 'active',
           private: t.private ?? false,
           needsReview: t.needsReview ?? false,
+          userEdited: t.userEdited ?? false,
+          supersededBy: null,
         })
         putSplits(t.id, list)
       },
@@ -385,6 +426,19 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           rows: matches.slice(page.offset, page.offset + page.limit).map(withSplits),
         }
       },
+      findByExternalId(accountId, externalId) {
+        const t = [...txns.values()].find(
+          (x) => x.accountId === accountId && x.externalId === externalId,
+        )
+        return t && withSplits(t)
+      },
+      listForAccountSince: (accountId, fromDate) =>
+        [...txns.values()]
+          .filter((t) => t.accountId === accountId && t.date >= fromDate)
+          .sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1))
+          .map(withSplits),
+      countForAccount: (accountId) =>
+        [...txns.values()].filter((t) => t.accountId === accountId).length,
       findInvariantViolations: () =>
         [...txns.values()]
           .filter(

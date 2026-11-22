@@ -56,9 +56,16 @@ const MESSAGES: Record<string, string> = {
   cannot_link:
     "Those two transactions can't be linked: a transfer needs equal and opposite amounts on two different accounts in the same currency.",
   forbidden: "You don't have permission to do that.",
+  has_transactions:
+    "This account already has transactions, so it can't be moved to another Space yet.",
+  sync_too_soon: 'That account was synced a moment ago. Wait a few minutes before syncing again.',
+  revoked: 'That connection has been disconnected.',
+  synced_account: "This account is filled in by your bank, so transactions can't be added by hand.",
   not_found: "That wasn't found.",
 }
-export const errorMessage = (e: unknown): string =>
-  e instanceof ApiError
-    ? (MESSAGES[e.code] ?? `Something went wrong (${e.code}).`)
-    : "Can't reach the Pond server."
+export const errorMessage = (e: unknown): string => {
+  if (!(e instanceof ApiError)) return "Can't reach the Pond server."
+  // Some errors (such as SimpleFIN's) carry a sanitized, human-readable message from the server.
+  const fromServer = typeof e.body.message === 'string' ? e.body.message : ''
+  return MESSAGES[e.code] ?? (fromServer || `Something went wrong (${e.code}).`)
+}

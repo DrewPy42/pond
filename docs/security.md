@@ -66,6 +66,10 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 
 Recorded actions: logins (success and failure), lockouts, user and role changes, Space membership changes, connection add/remove, secret reveals, backup create/download/restore, LilyPad install/enable/update/uninstall, and settings changes. Each entry stores actor, target and Space, never secret values. Admins can view the log in Settings.
 
+## Outbound requests (SimpleFIN)
+
+Pond makes server-side requests to a URL an admin pastes (the SimpleFIN claim URL) and to the stored Access URL. Defenses: https only, port 443 only, no `localhost`, `.local`, `.internal`, private, link-local or bare hostnames, redirects refused, a request timeout and a response size cap. The Access URL carries credentials, so it is encrypted at rest, moved into an `Authorization` header for requests (never left in a URL), never logged, never returned by the API and never written to the audit log (`setupToken` and `accessUrl` are in the log redaction list).
+
 ## Updates
 
 Release images are published to GHCR and signed with cosign; the update docs include the verify step. Pond takes a backup automatically before running new migrations.
