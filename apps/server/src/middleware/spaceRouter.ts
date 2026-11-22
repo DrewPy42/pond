@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from 'express'
-import type { Db } from '../db/index.js'
+import type { Repos } from '../repos/types.js'
 import type { Role } from '../types.js'
 import { requireAuth, requireSpace } from './auth.js'
 
@@ -15,13 +15,13 @@ export interface SpaceRouteInfo {
  * (deny by default) and is recorded in `registry` so tests can prove the non-member-gets-404
  * rule for every one of them (security.md).
  */
-export function createSpaceRouter(db: Db, basePath: string, registry: SpaceRouteInfo[]) {
+export function createSpaceRouter(repos: Repos, basePath: string, registry: SpaceRouteInfo[]) {
   const router = Router({ mergeParams: true })
   const add =
     (method: SpaceRouteInfo['method']) =>
     (path: string, minRole: Role, ...handlers: RequestHandler[]) => {
       registry.push({ method, path: `${basePath}${path === '/' ? '' : path}`, minRole })
-      router[method](path, requireAuth(), requireSpace(db, minRole), ...handlers)
+      router[method](path, requireAuth(), requireSpace(repos, minRole), ...handlers)
     }
   return {
     router,

@@ -8,12 +8,26 @@ Run everything with `pnpm test`. CI runs it, plus lint, typecheck and build, on 
 
 | Kind | Used for | How |
 |---|---|---|
-| **API integration** (the main workhorse) | Every route and the rules behind it: permissions, validation, ledger invariants, sync de-duplication | Vitest + Supertest against the real Express app and an in-memory SQLite database. Don't mock our own code. |
-| **Unit** | Pure logic: money math, rules engine, CSV parsing and column mapping, duplicate detection, transfer matching | Plain Vitest, no database |
-| **Migration** | Upgrading from every released schema version without losing data (`CLAUDE.md` rule 9) | Fixture data per schema version, see below |
+| **Functionality tests** (the main workhorse) | Every route and service and the rules behind it: permissions, validation, ledger invariants, sync de-duplication | Vitest, with **mock data and fake repositories instead of a database** (see "Mock data, not the database"). Routes are driven through Supertest. |
+| **Unit** | Pure logic: money math, rules engine, CSV parsing and column mapping, duplicate detection, transfer matching | Plain Vitest, no database, no fakes needed |
+| **Repository and migration** (the *only* tests that touch SQLite) | That our queries do what the fakes pretend, and that every released schema version upgrades without losing data (`CLAUDE.md` rule 9) | Real in-memory SQLite, kept small; see below |
 | **Component** | Shared UI components in `apps/web/src/components/common` | Vitest + Vue Test Utils. Pages that only compose them need fewer tests. |
 | **End-to-end smoke** (a handful only) | Critical flows in a real browser: setup, sign-in with TOTP, adding a transaction | Playwright, 5 to 10 tests. Slow, so kept small. Planned; adding it needs approval as a new dependency. |
 | **Release gate** (M9) | The shipped image actually works | Before publishing, build for arm64 and amd64, start it, migrate a fixture database, check `/api/health` |
+
+## Mock data, not the database
+
+Functionality tests check what our code *does*, so they don't use a database. They run against mock data:
+
+- **Repositories.** Routes and services never call Drizzle directly. They use small repository interfaces (`UserRepo`, `SpaceRepo`, `SessionRepo`, `AuditRepo`, later `TransactionRepo`, ...) passed in through `AppContext`. The real implementations wrap Drizzle (so `CLAUDE.md` rule 8 still holds: every query goes through Drizzle); tests pass in **in-memory fakes** backed by plain arrays or Maps.
+- **Factories.** Test data comes from builders such as `buildUser({ isAdmin: true })`, `buildSpace()`, `buildTransaction({ amountCents: -1250 })`, with sensible defaults and only the fields a test cares about overridden. They live in `apps/server/src/testing/`.
+- **Fixed inputs.** The clock (`ctx.now`), id generator and login-limiter clock are injected, so results are repeatable.
+- **Why this is better here:** tests are faster, and each failure points at our logic and not at SQL or setup.
+
+The cost is that a fake can drift from the real database (for example, forgetting a unique constraint). Two things keep that honest:
+
+1. **Repository contract tests.** The same suite runs against the fake *and* the real Drizzle repository on in-memory SQLite, so they must behave identically. These and the migration tests are the only places a real database appears, because there the database is the thing under test.
+2. **Database rules are enforced in the schema as well**, not only in code (unique indexes, foreign keys, `NOT NULL`), so a fake that is too lenient can't hide a missing constraint from the contract tests.
 
 ## Every test must say what it checks
 
@@ -46,10 +60,12 @@ Good examples to copy: `packages/shared/src/money.test.ts` and `apps/server/src/
 - **Money tests use integer cents.** Include a negative amount and a remainder case.
 - **Every new Space-scoped route is declared with `createSpaceRouter`.** The permission suite then covers its 401/404/403 behavior automatically; add tests for the route's own logic.
 - **Every schema change ships with a migration test** (next section).
-- **Tests are deterministic.** Inject the clock (`ctx.now`) and the login limiter's clock; no real sleeping, no network, no shared state between tests.
+- **Functionality tests don't touch the database, the network or the real clock.** Use fakes, factories and injected clocks; no real sleeping and no shared state between tests.
 - **A bug fix starts with a failing test** that reproduces it.
 - **Check that new tests can fail.** Break the code on purpose once and confirm the test goes red (this is how the permission suite was checked).
-- **Never put real secrets or real financial data in fixtures.**
+- **Never put real secrets or real financial data in mock data or fixtures.**
+- **Existing tests follow the same style.** The M1 server tests were converted to fake repositories and the Function / Inputs / Expected comments before M2 began; a new test that doesn't follow them is a review comment.
+- **Lint enforces the boundary.** ESLint forbids importing Drizzle, `better-sqlite3` or `db/` from routes, middleware, `auth/`, `audit.ts` and `app.ts`; they can only reach data through `repos`.
 
 ## Migration tests
 
@@ -63,4 +79,9 @@ Migrations are forward-only and must run on a database restored from an older ba
 
 ## Where tests live
 
-Next to the code, as `*.test.ts`, with shared helpers in `testing.ts` (server). The server helper builds an app with an injected clock and gives a cookie-jar `Client` that handles sessions and CSRF, so tests read like a user's steps.
+Next to the code, as `*.test.ts`. Server helpers live in `apps/server/src/testing/`:
+
+- `fakeRepos.ts`: in-memory repositories (`createFakeRepos(clock)`)
+- `factories.ts`: `buildUser()`, `buildSpace()`, ...
+- `repoContract.ts`: the contract run against both the fakes and the real repositories (`repos/*.contract.test.ts`)
+- `harness.ts`: `makeEnv()` builds the whole app on fakes with a fixed clock and predictable ids, plus a cookie-jar `Client` that handles sessions and CSRF so tests read like a user's steps. `bootstrapAdmin()` and `createUser()` set up a signed-in admin or user.

@@ -1,11 +1,19 @@
-import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { IDLE_TIMEOUT_MS, REAUTH_WINDOW_MS, hasRecentReauth } from './auth/sessions'
-import { auditLog, recoveryCodes, sessions, users } from './db/schema'
-import { Client, PASSWORD, bootstrapAdmin, createUser, makeEnv, totpNow } from './testing'
+import { IDLE_TIMEOUT_MS, REAUTH_WINDOW_MS, hasRecentReauth, sha256 } from './auth/sessions'
+import { Client, PASSWORD, bootstrapAdmin, createUser, makeEnv, totpNow } from './testing/harness'
 
-describe('first-run setup', () => {
-  it('reports setup required, then refuses everything without the code', async () => {
+/**
+ * Functionality tests for the identity routes. They run the real app against in-memory fake
+ * repositories (no database), a fixed clock, and a cookie-jar Client that sends the session
+ * and CSRF cookies like a browser. PASSWORD is a valid 12+ character test password.
+ */
+
+describe('GET /api/setup/status and POST /api/setup (first-run admin creation)', () => {
+  /**
+   * Inputs:   a fresh install (setup code active, no users); setup request with code "WRONG"
+   * Expected: status endpoint says setupRequired=true; the request gets 403 and no user is created
+   */
+  it('refuses setup without the correct one-time code', async () => {
     const env = makeEnv()
     const c = new Client(env.app)
     expect((await c.get('/api/setup/status')).body).toEqual({ setupRequired: true })
@@ -16,13 +24,20 @@ describe('first-run setup', () => {
       password: PASSWORD,
     })
     expect(bad.status).toBe(403)
-    expect(env.ctx.db.db.select().from(users).all()).toHaveLength(0)
+    expect(env.ctx.repos.users.count()).toBe(0)
   })
 
-  it('creates the admin once and consumes the code', async () => {
+  /**
+   * Inputs:   the correct code with a valid username/password, then a second setup attempt
+   * Expected: first succeeds (admin exists); second gets 404 and status reports setupRequired=false
+   */
+  it('creates the first admin once and then consumes the code', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
-    expect(admin.id).toBeTruthy()
+    expect(env.ctx.repos.users.findById(admin.id)).toMatchObject({
+      username: 'admin',
+      isAdmin: true,
+    })
     const again = await new Client(env.app).post('/api/setup', {
       setupCode: 'ANYTHING',
       username: 'second',
@@ -35,11 +50,19 @@ describe('first-run setup', () => {
     })
   })
 
-  it('has no setup code when a user already exists', () => {
+  /**
+   * Inputs:   an install that already has users (makeEnv without a setup code)
+   * Expected: setupCode.active is false, so setup can never be used again
+   */
+  it('has no setup code when users already exist', () => {
     expect(makeEnv({ withSetupCode: false }).ctx.setupCode.active).toBe(false)
   })
 
-  it('rejects weak passwords', async () => {
+  /**
+   * Inputs:   correct code, password "short"
+   * Expected: 400 weak_password, and the code is NOT burned (setupCode still active)
+   */
+  it('rejects a weak password without using up the setup code', async () => {
     const env = makeEnv()
     const r = await new Client(env.app).post('/api/setup', {
       setupCode: env.ctx.setupCode.reveal(),
@@ -49,11 +72,14 @@ describe('first-run setup', () => {
     })
     expect(r.status).toBe(400)
     expect(r.body.error).toBe('weak_password')
-    // A bad password must not burn the one-time code.
     expect(env.ctx.setupCode.active).toBe(true)
   })
 
-  it('throttles setup-code guessing', async () => {
+  /**
+   * Inputs:   five wrong codes in a row from one IP, then the correct code
+   * Expected: the sixth request is throttled with 429 even though its code is right
+   */
+  it('throttles guessing of the setup code', async () => {
     const env = makeEnv()
     const c = new Client(env.app)
     const body = { setupCode: 'NOPE', username: 'admin', displayName: 'A', password: PASSWORD }
@@ -63,8 +89,13 @@ describe('first-run setup', () => {
   })
 })
 
-describe('admin TOTP requirement', () => {
-  it('blocks a fresh admin from everything but enrollment until TOTP is confirmed', async () => {
+describe('admin TOTP requirement (POST /api/auth/totp/enroll and /confirm)', () => {
+  /**
+   * Inputs:   a brand-new admin session; enroll, a wrong code "000000", then the right code
+   * Expected: until confirmed, /api/users and /api/spaces return 403 totp_enrollment_required;
+   *           the wrong code gives 400; the right code gives 10 recovery codes and unlocks the API
+   */
+  it('blocks a new admin from everything but enrollment until TOTP is confirmed', async () => {
     const env = makeEnv()
     const c = new Client(env.app)
     await c.post('/api/setup', {
@@ -85,20 +116,31 @@ describe('admin TOTP requirement', () => {
     expect((await c.get('/api/users')).status).toBe(200)
   })
 
-  it('stores the TOTP secret encrypted and recovery codes hashed', async () => {
+  /**
+   * Inputs:   a fully enrolled admin (secret and 10 recovery codes shown to the user once)
+   * Expected: the stored secret is encrypted ("v1:" prefix, plaintext absent); the repository
+   *           holds 10 unused codes but none of the plain codes can be found (only hashes stored)
+   */
+  it('stores the TOTP secret encrypted and recovery codes only as hashes', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
-    const row = env.ctx.db.db.select().from(users).where(eq(users.id, admin.id)).get()!
+    const row = env.ctx.repos.users.findById(admin.id)!
     expect(row.totpSecretEnc).toMatch(/^v1:/)
     expect(row.totpSecretEnc).not.toContain(admin.secret!)
-    const codes = env.ctx.db.db.select().from(recoveryCodes).all()
-    expect(codes).toHaveLength(10)
-    for (const c of admin.recoveryCodes!) expect(codes.map((x) => x.codeHash)).not.toContain(c)
+    expect(env.ctx.repos.recoveryCodes.countUnused(admin.id)).toBe(10)
+    for (const plain of admin.recoveryCodes!) {
+      expect(env.ctx.repos.recoveryCodes.findUnused(admin.id, plain)).toBeUndefined()
+    }
   })
 })
 
-describe('login', () => {
-  it('requires a TOTP code when enabled, and accepts a valid one', async () => {
+describe('POST /api/auth/login', () => {
+  /**
+   * Inputs:   admin with TOTP; login with password only, then a wrong code, then a valid code
+   * Expected: 401 totp_required; 401; then 200 with the user (no password hash in the response)
+   *           and a session that works on /api/auth/me
+   */
+  it('requires a TOTP code when enabled and accepts a valid one', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const c = new Client(env.app)
@@ -120,7 +162,11 @@ describe('login', () => {
     expect((await c.get('/api/auth/me')).status).toBe(200)
   })
 
-  it('gives the same error for wrong password and unknown user', async () => {
+  /**
+   * Inputs:   a wrong password for a real user, and any password for a user that doesn't exist
+   * Expected: identical 401 responses, so the error never reveals which usernames exist
+   */
+  it('gives the same error for a wrong password and an unknown user', async () => {
     const env = makeEnv()
     await bootstrapAdmin(env)
     const c = new Client(env.app)
@@ -134,7 +180,11 @@ describe('login', () => {
     expect(a.body).toEqual(b.body)
   })
 
-  it('recovery codes work exactly once', async () => {
+  /**
+   * Inputs:   the same recovery code used to log in twice
+   * Expected: first login 200; second login 401 (a recovery code works exactly once)
+   */
+  it('accepts each recovery code only once', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const code = admin.recoveryCodes![0]!
@@ -158,6 +208,12 @@ describe('login', () => {
     ).toBe(401)
   })
 
+  /**
+   * Inputs:   five wrong-password logins from one IP for user "sam", then the correct password;
+   *           then 31 seconds later the correct password again (fixed clock advanced)
+   * Expected: the sixth attempt is 429 with a Retry-After header and an "auth.lockout" audit
+   *           entry; it stays locked; after the delay the correct password succeeds (200)
+   */
   it('locks out after repeated failures, backs off, and audits the lockout', async () => {
     const env = makeEnv()
     await createUser(env, await bootstrapAdmin(env), 'sam')
@@ -171,11 +227,9 @@ describe('login', () => {
     const locked = await c.post('/api/auth/login', { username: 'sam', password: PASSWORD })
     expect(locked.status).toBe(429)
     expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0)
-    expect(
-      env.ctx.db.db.select().from(auditLog).where(eq(auditLog.action, 'auth.lockout')).all().length,
-    ).toBeGreaterThan(0)
+    const actions = env.ctx.repos.audit.list({ limit: 200 }).map((e) => e.action)
+    expect(actions).toContain('auth.lockout')
 
-    // Still locked a little later, allowed after the delay.
     expect((await c.post('/api/auth/login', { username: 'sam', password: PASSWORD })).status).toBe(
       429,
     )
@@ -185,6 +239,10 @@ describe('login', () => {
     )
   })
 
+  /**
+   * Inputs:   a user the admin has disabled, logging in with the correct password
+   * Expected: 401 (a disabled account can't sign in)
+   */
   it('refuses disabled users', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
@@ -197,44 +255,55 @@ describe('login', () => {
   })
 })
 
-describe('sessions', () => {
+describe('sessions (cookie, idle and absolute limits, logout, CSRF)', () => {
+  /**
+   * Inputs:   a signed-in admin's session cookie value (the raw token)
+   * Expected: the repository has no session under the raw token, only under its SHA-256 hash,
+   *           so a database leak does not leak usable tokens
+   */
   it('stores only a hash of the session token', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const token = admin.client.jar.get('pond_session')!
-    const ids = env.ctx.db.db
-      .select()
-      .from(sessions)
-      .all()
-      .map((s) => s.id)
-    expect(ids).not.toContain(token)
-    expect(ids.every((id) => /^[0-9a-f]{64}$/.test(id))).toBe(true)
+    expect(env.ctx.repos.sessions.findWithUser(token)).toBeUndefined()
+    expect(env.ctx.repos.sessions.findWithUser(sha256(token))).toBeDefined()
   })
 
-  it('expires after the idle timeout but slides while active', async () => {
+  /**
+   * Inputs:   requests made just inside the 12-hour idle window (twice), then 12h + 1s of silence
+   * Expected: the first two succeed and each slides the window forward; the last gets 401
+   */
+  it('expires after the idle timeout but slides while the user is active', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     env.advance(IDLE_TIMEOUT_MS - 60_000)
-    expect((await admin.client.get('/api/auth/me')).status).toBe(200) // slides the window
+    expect((await admin.client.get('/api/auth/me')).status).toBe(200)
     env.advance(IDLE_TIMEOUT_MS - 60_000)
     expect((await admin.client.get('/api/auth/me')).status).toBe(200)
     env.advance(IDLE_TIMEOUT_MS + 1000)
     expect((await admin.client.get('/api/auth/me')).status).toBe(401)
   })
 
+  /**
+   * Inputs:   a session kept active with a request every hour for 31 days
+   * Expected: eventually 401: the 30-day absolute limit applies even to an active session
+   */
   it('enforces the 30-day absolute limit even when active', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
-    // Keep the session active hourly across 31 days.
     let status = 200
-    for (let h = 0; h < 31 * 24 && status === 200; h++) {
+    for (let hour = 0; hour < 31 * 24 && status === 200; hour++) {
       env.advance(60 * 60 * 1000)
       status = (await admin.client.get('/api/auth/me')).status
     }
     expect(status).toBe(401)
   }, 60_000)
 
-  it('logout revokes the session server-side', async () => {
+  /**
+   * Inputs:   a copy of the session cookies taken before POST /api/auth/logout
+   * Expected: the copied (stolen) cookies get 401 afterwards: logout revokes it server-side
+   */
+  it('revokes the session on the server at logout', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const stolen = new Client(env.app)
@@ -243,7 +312,11 @@ describe('sessions', () => {
     expect((await stolen.get('/api/auth/me')).status).toBe(401)
   })
 
-  it('rejects state-changing requests without a matching CSRF token', async () => {
+  /**
+   * Inputs:   POST /api/spaces with a valid session but no x-csrf-token header, then with it
+   * Expected: 403 csrf_failed without the header; 201 with it
+   */
+  it('rejects state-changing requests that lack the CSRF token', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     expect(
@@ -261,7 +334,13 @@ describe('sessions', () => {
     )
   })
 
-  it('password change revokes other sessions and needs the current password', async () => {
+  /**
+   * Inputs:   user "sam" with two sessions; POST /api/auth/password with a wrong current
+   *           password, then the right one and a new strong password
+   * Expected: wrong current -> 401; right -> 200. Sam's other session is revoked (401), the
+   *           current one stays valid, and the new password works for a fresh login
+   */
+  it('changes the password, needing the current one, and revokes other sessions', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const sam = await createUser(env, admin, 'sam')
@@ -285,14 +364,21 @@ describe('sessions', () => {
     ).toBe(200)
     expect((await other.get('/api/auth/me')).status).toBe(401)
     expect((await sam.client.get('/api/auth/me')).status).toBe(200)
-    const relog = new Client(env.app)
     expect(
-      (await relog.post('/api/auth/login', { username: 'sam', password: 'another-long-pass-9' }))
-        .status,
+      (
+        await new Client(env.app).post('/api/auth/login', {
+          username: 'sam',
+          password: 'another-long-pass-9',
+        })
+      ).status,
     ).toBe(200)
   })
 
-  it('disabling a user revokes their sessions immediately', async () => {
+  /**
+   * Inputs:   user "sam" signed in; the admin disables sam
+   * Expected: sam's existing session gets 401 immediately
+   */
+  it("ends a user's sessions at once when an admin disables them", async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const sam = await createUser(env, admin, 'sam')
@@ -301,8 +387,14 @@ describe('sessions', () => {
   })
 })
 
-describe('audit log', () => {
-  it('records auth events without secrets, and only admins can read it', async () => {
+describe('GET /api/audit-log (and what is written to it)', () => {
+  /**
+   * Inputs:   an admin who set up TOTP, created user "sam", and saw one failed login
+   * Expected: the log has setup, TOTP, user-created, login and login-failed entries; none of the
+   *           password, the wrong password or the TOTP secret appears anywhere in it; a
+   *           non-admin gets 403 and an anonymous caller gets 401
+   */
+  it('records auth events without secrets and is admin-only', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     const sam = await createUser(env, admin, 'sam')
@@ -324,7 +416,7 @@ describe('audit log', () => {
       ]),
     )
 
-    const raw = JSON.stringify(env.ctx.db.db.select().from(auditLog).all())
+    const raw = JSON.stringify(env.ctx.repos.audit.list({ limit: 500 }))
     expect(raw).not.toContain(PASSWORD)
     expect(raw).not.toContain('wrong-password-123')
     expect(raw).not.toContain(admin.secret!)
@@ -334,18 +426,26 @@ describe('audit log', () => {
   })
 })
 
-describe('reauth', () => {
-  it('requires the password', async () => {
+describe('POST /api/auth/reauth and hasRecentReauth(reauthAt, now)', () => {
+  /**
+   * Inputs:   a wrong password, then the right password
+   * Expected: 401, then 200 and the session records a reauth time
+   */
+  it('needs the password and records the time', async () => {
     const env = makeEnv()
     const admin = await bootstrapAdmin(env)
     expect(
       (await admin.client.post('/api/auth/reauth', { password: 'wrong-password-123' })).status,
     ).toBe(401)
     expect((await admin.client.post('/api/auth/reauth', { password: PASSWORD })).status).toBe(200)
-    const row = env.ctx.db.db.select().from(sessions).all()[0]!
-    expect(row.reauthAt).not.toBeNull()
+    const token = admin.client.jar.get('pond_session')!
+    expect(env.ctx.repos.sessions.findWithUser(sha256(token))!.session.reauthAt).not.toBeNull()
   })
 
+  /**
+   * Inputs:   a re-auth at 12:00; "now" = 12:05:00 and 12:05:00.001; and a null re-auth time
+   * Expected: recent at exactly 5 minutes, not recent 1 ms later, not recent when never re-authed
+   */
   it('counts as recent for exactly five minutes', () => {
     const t0 = new Date('2026-01-01T12:00:00Z')
     expect(hasRecentReauth(null, t0)).toBe(false)

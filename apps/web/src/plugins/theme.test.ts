@@ -13,6 +13,10 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+// Function: pondLight / pondDark theme definitions (apps/web/src/plugins/theme.ts)
+// Inputs:   every text colour paired with the background it is drawn on, in both themes
+//           (e.g. on-primary on primary, link on background, money-in on surface)
+// Expected: a WCAG contrast ratio of at least 4.5:1 for each pair (CLAUDE.md contrast rule)
 describe.each([
   ['light', pondLight],
   ['dark', pondDark],

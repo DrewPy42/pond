@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { Client, bootstrapAdmin, createUser, makeEnv, type Account, type TestEnv } from './testing'
+import {
+  Client,
+  bootstrapAdmin,
+  createUser,
+  makeEnv,
+  type Account,
+  type TestEnv,
+} from './testing/harness'
 
 /**
  * The permission suite required by docs/security.md and CLAUDE.md: deny by default, 404 (not
  * 403) for non-members so Space existence never leaks, roles enforced, admins see everything.
+ * Runs the real app on in-memory fake repositories (no database).
+ *
+ * The "world" below is the mock data every test uses:
+ *   admin   - site administrator (no membership rows; sees every Space)
+ *   owner   - "alice", owner of Space A (Home)       editor - "bob", editor of Space A
+ *   viewer  - "carol", viewer of Space A             outsider - "dave", owner of Space B only
+ *   loner   - "erin", member of no Space at all
  */
 
 interface World {
@@ -51,12 +65,23 @@ const fill = (path: string, w: World, spaceId: string) =>
 const bodyFor = (method: string) =>
   method === 'put' ? { role: 'viewer' } : method === 'patch' ? { name: 'Renamed' } : {}
 
-describe('every Space-scoped route', () => {
+describe('every Space-scoped route (auto-discovered from createSpaceRouter)', () => {
+  /**
+   * Function: createSpaceRouter registry (ctx.spaceRoutes)
+   * Inputs:   the app built with the standard routes
+   * Expected: at least 5 Space-scoped routes are registered; if this were empty, every
+   *           "for every route" test below would pass without checking anything
+   */
   it('is registered (the suite below would otherwise prove nothing)', async () => {
     const w = await world()
     expect(w.env.ctx.spaceRoutes.length).toBeGreaterThanOrEqual(5)
   })
 
+  /**
+   * Function: requireAuth on every Space-scoped route
+   * Inputs:   each registered route called with no session cookie
+   * Expected: 401 for every one
+   */
   it('returns 401 with no session', async () => {
     const w = await world()
     const anon = new Client(w.env.app)
@@ -66,6 +91,12 @@ describe('every Space-scoped route', () => {
     }
   })
 
+  /**
+   * Function: requireSpace(repos, minRole) on every Space-scoped route
+   * Inputs:   "dave" (member of Space B only) and "erin" (no Spaces) calling every route for
+   *           Space A, and for a Space id that does not exist
+   * Expected: 404 in both cases with identical bodies, so nobody can tell whether a Space exists
+   */
   it('returns 404 to a non-member, identical to a Space that does not exist', async () => {
     const w = await world()
     for (const who of [w.outsider, w.loner]) {
@@ -84,6 +115,12 @@ describe('every Space-scoped route', () => {
     }
   })
 
+  /**
+   * Function: requireSpace(repos, minRole) role check on every Space-scoped route
+   * Inputs:   "carol" (viewer) and "bob" (editor) calling every route in Space A
+   * Expected: 403 where the route needs a higher role than theirs; never 403/404 where their
+   *           role is enough
+   */
   it('enforces the declared minimum role', async () => {
     const w = await world()
     const rank = { viewer: 1, editor: 2, owner: 3 } as const
@@ -100,6 +137,11 @@ describe('every Space-scoped route', () => {
     }
   })
 
+  /**
+   * Function: requireSpace(repos, minRole) admin bypass
+   * Inputs:   the admin (no membership rows) calling every route for Space B
+   * Expected: never 401 or 403 (admins act as owner in every Space)
+   */
   it('lets admins through everywhere without membership rows', async () => {
     const w = await world()
     for (const r of w.env.ctx.spaceRoutes) {
@@ -130,6 +172,11 @@ describe('all other API endpoints are closed to anonymous callers', () => {
     ['post', '/api/spaces'],
     ['get', '/api/audit-log'],
   ]
+  /**
+   * Function: requireAuth on every non-public endpoint (listed below)
+   * Inputs:   each endpoint called with no session
+   * Expected: 401 for all; the only open endpoints are health, setup status, setup and login
+   */
   it.each(endpoints)('%s %s -> 401', async (method, path) => {
     const w = makeEnv()
     expect(open.has(`${method.toUpperCase()} ${path}`)).toBe(false)
@@ -137,13 +184,24 @@ describe('all other API endpoints are closed to anonymous callers', () => {
     expect(res.status).toBe(401)
   })
 
+  /**
+   * Function: the /api catch-all
+   * Inputs:   GET /api/accounts (a path that does not exist yet), with no session
+   * Expected: 404
+   */
   it('unknown /api paths are 404, never a data leak', async () => {
     const res = await new Client(makeEnv().app).get('/api/accounts')
     expect(res.status).toBe(404)
   })
 })
 
-describe('Space listing and management', () => {
+describe('Space listing and member management (/api/spaces)', () => {
+  /**
+   * Function: GET /api/spaces
+   * Inputs:   each user in the world requesting their Space list
+   * Expected: alice "Home:owner"; carol "Home:viewer"; dave "Biz:owner"; erin nothing; the
+   *           admin sees both Spaces
+   */
   it("lists only the caller's Spaces with their role; admins see all", async () => {
     const w = await world()
     const names = async (c: Account) =>
@@ -157,6 +215,11 @@ describe('Space listing and management', () => {
     expect((await names(w.admin)).sort()).toEqual(['Biz:owner', 'Home:owner'])
   })
 
+  /**
+   * Function: POST /api/spaces
+   * Inputs:   alice (a Space owner, not an admin) creating a Space
+   * Expected: 403
+   */
   it('only admins create Spaces', async () => {
     const w = await world()
     expect(
@@ -164,6 +227,13 @@ describe('Space listing and management', () => {
     ).toBe(403)
   })
 
+  /**
+   * Function: PUT/DELETE /api/spaces/:spaceId/members/:userId
+   * Inputs:   bob (editor) then alice (owner) adding "erin" as viewer, changing her to editor,
+   *           then removing her
+   * Expected: bob gets 403; alice's changes succeed (200); erin can read Space A while a
+   *           member and gets 404 once removed
+   */
   it('owners manage members; editors and viewers cannot', async () => {
     const w = await world()
     const url = `/api/spaces/${w.a}/members/${w.loner.id}`
@@ -175,6 +245,11 @@ describe('Space listing and management', () => {
     expect((await w.loner.client.get(`/api/spaces/${w.a}`)).status).toBe(404)
   })
 
+  /**
+   * Function: DELETE /api/spaces/:spaceId/members/:userId
+   * Inputs:   carol (viewer) reads Space A, alice removes her, carol reads again
+   * Expected: 200 before removal, 404 after (no stale access)
+   */
   it('removing a member takes effect immediately', async () => {
     const w = await world()
     expect((await w.viewer.client.get(`/api/spaces/${w.a}`)).status).toBe(200)
@@ -182,12 +257,22 @@ describe('Space listing and management', () => {
     expect((await w.viewer.client.get(`/api/spaces/${w.a}`)).status).toBe(404)
   })
 
+  /**
+   * Function: DELETE /api/spaces/:spaceId/members/:userId (last-owner guard)
+   * Inputs:   alice, the only owner of Space A, removing herself
+   * Expected: 409 (a Space can't be left without an owner)
+   */
   it('refuses to remove the last owner', async () => {
     const w = await world()
     const res = await w.owner.client.delete(`/api/spaces/${w.a}/members/${w.owner.id}`)
     expect(res.status).toBe(409)
   })
 
+  /**
+   * Function: PUT /api/spaces/:spaceId/members/:userId validation
+   * Inputs:   role "god"; and a user id that doesn't exist
+   * Expected: 400 for both
+   */
   it('rejects unknown roles and unknown users', async () => {
     const w = await world()
     expect(
@@ -199,6 +284,11 @@ describe('Space listing and management', () => {
     ).toBe(400)
   })
 
+  /**
+   * Function: PUT /api/spaces/:spaceId/members/:userId (audit)
+   * Inputs:   alice adds erin as viewer
+   * Expected: audit entry "space.member_added" with the Space id, erin's id and role "viewer"
+   */
   it('audits membership changes with the Space id', async () => {
     const w = await world()
     await w.owner.client.put(`/api/spaces/${w.a}/members/${w.loner.id}`, { role: 'viewer' })
@@ -208,7 +298,12 @@ describe('Space listing and management', () => {
   })
 })
 
-describe('user management', () => {
+describe('user management (/api/users)', () => {
+  /**
+   * Function: GET/POST /api/users
+   * Inputs:   alice (not an admin) listing and creating users
+   * Expected: 403 for both
+   */
   it('is admin-only', async () => {
     const w = await world()
     expect((await w.owner.client.get('/api/users')).status).toBe(403)
@@ -223,12 +318,22 @@ describe('user management', () => {
     ).toBe(403)
   })
 
+  /**
+   * Function: GET /api/users (response shape)
+   * Inputs:   the admin listing users
+   * Expected: the JSON contains no password hash, TOTP secret or encrypted value
+   */
   it('never exposes password hashes or TOTP secrets', async () => {
     const w = await world()
     const raw = JSON.stringify((await w.admin.client.get('/api/users')).body)
     expect(raw).not.toMatch(/argon2|passwordHash|totpSecret|v1:/)
   })
 
+  /**
+   * Function: PATCH /api/users/:userId (last-admin guard)
+   * Inputs:   the only admin demoting themselves, then disabling themselves
+   * Expected: 409 both times (the install can't lose its last admin)
+   */
   it('protects the last admin from demotion or disabling', async () => {
     const w = await world()
     expect(
@@ -239,6 +344,11 @@ describe('user management', () => {
     ).toBe(409)
   })
 
+  /**
+   * Function: POST /api/users validation
+   * Inputs:   username "alice" (taken) and "A B" (invalid characters)
+   * Expected: 409 for the duplicate, 400 for the invalid one
+   */
   it('rejects duplicate and invalid usernames', async () => {
     const w = await world()
     const mk = (username: string) =>

@@ -1,6 +1,5 @@
 import express, { type ErrorRequestHandler, type Express } from 'express'
 import helmet from 'helmet'
-import { schemaVersion } from './db/index.js'
 import type { AppContext } from './context.js'
 import { csrfGuard, sessionMiddleware } from './middleware/auth.js'
 import { auditRouter } from './routes/audit.js'
@@ -24,10 +23,10 @@ export function createApp(ctx: AppContext): Express {
   // Unauthenticated by design: liveness only, no data.
   app.use(
     '/api/health',
-    healthRouter(() => ({ version: VERSION, schemaVersion: schemaVersion(ctx.db) })),
+    healthRouter(() => ({ version: VERSION, schemaVersion: ctx.repos.system.schemaVersion() })),
   )
 
-  app.use('/api', sessionMiddleware(ctx.db.db, ctx.now), csrfGuard)
+  app.use('/api', sessionMiddleware(ctx.repos, ctx.now), csrfGuard)
 
   // Every route below is deny-by-default: it declares requireAuth / requireAdmin / the Space
   // router itself. Only setup status/creation and login are open, and each is guarded inside.

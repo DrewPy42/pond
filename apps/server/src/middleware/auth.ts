@@ -1,8 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
-import { and, eq } from 'drizzle-orm'
 import { csrfMatches, hasRecentReauth, loadSession } from '../auth/sessions.js'
-import type { Db } from '../db/index.js'
-import { spaceMembers, spaces } from '../db/schema.js'
+import type { Repos } from '../repos/types.js'
 import { CSRF_COOKIE, SESSION_COOKIE, parseCookies, sendError } from '../http.js'
 import type { Role } from '../types.js'
 
@@ -10,10 +8,10 @@ const ROLE_RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 }
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 /** Loads the session (if any) onto `req.auth`. Never rejects by itself. */
-export function sessionMiddleware(db: Db, now: () => Date): RequestHandler {
+export function sessionMiddleware(repos: Repos, now: () => Date): RequestHandler {
   return (req, _res, next) => {
     const token = parseCookies(req.headers.cookie)[SESSION_COOKIE]
-    if (token) req.auth = loadSession(db, token, now()) ?? undefined
+    if (token) req.auth = loadSession(repos.sessions, token, now()) ?? undefined
     next()
   }
 }
@@ -62,27 +60,19 @@ export const requireAdmin: RequestHandler = (req, res, next) => {
  *  - admin: treated as owner everywhere
  * Handlers read the result from `req.space`.
  */
-export function requireSpace(db: Db, minRole: Role): RequestHandler {
+export function requireSpace(repos: Repos, minRole: Role): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const auth = req.auth
     if (!auth) return sendError(res, 401, 'unauthenticated')
     const spaceId = req.params.spaceId
     if (typeof spaceId !== 'string') return sendError(res, 404, 'not_found')
 
-    const space = db.select({ id: spaces.id }).from(spaces).where(eq(spaces.id, spaceId)).get()
-    if (!space) return sendError(res, 404, 'not_found')
+    if (!repos.spaces.findById(spaceId)) return sendError(res, 404, 'not_found')
 
-    let role: Role | null
-    if (auth.user.isAdmin) {
-      role = 'owner'
-    } else {
-      role =
-        db
-          .select({ role: spaceMembers.role })
-          .from(spaceMembers)
-          .where(and(eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, auth.user.id)))
-          .get()?.role ?? null
-    }
+    // Admins are owners everywhere; everyone else needs a membership row.
+    const role: Role | undefined = auth.user.isAdmin
+      ? 'owner'
+      : repos.spaces.getRole(spaceId, auth.user.id)
     if (!role) return sendError(res, 404, 'not_found')
     if (ROLE_RANK[role] < ROLE_RANK[minRole]) return sendError(res, 403, 'forbidden')
     req.space = { id: spaceId, role }

@@ -110,4 +110,5 @@ Add a component to the barrel the **second** time something is needed, not the f
 ### Same idea on the server and in `packages/shared`
 
 - Request and response **zod schemas, types and money helpers** live in `packages/shared`, used by both server and web, never redefined per side.
+- **Data access goes through repositories** (`apps/server/src/repos`): routes, middleware and services depend on interfaces (`UserRepo`, `SessionRepo`, `SpaceRepo`, `AuditRepo`, ...) passed in via `AppContext`. Only the Drizzle implementations touch the database, which keeps business logic testable on in-memory fakes (`testing.md`). New tables get a repository, a fake, and a contract test.
 - Cross-cutting server behavior is a helper, not copy-paste: `createSpaceRouter` and `requireSpace` for Space access, `validateBody` for input, `recordAudit` for the audit log. New routes use them.
