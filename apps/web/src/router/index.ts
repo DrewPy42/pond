@@ -45,8 +45,11 @@ const router = createRouter({
       name: 'categories',
       component: () => import('../views/CategoriesView.vue'),
     },
+    { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
     ...coreNav
-      .filter((n) => !['/', '/accounts', '/transactions', '/categories'].includes(n.path))
+      .filter(
+        (n) => !['/', '/accounts', '/transactions', '/categories', '/settings'].includes(n.path),
+      )
       .map((n) => ({
         path: n.path,
         name: n.name,

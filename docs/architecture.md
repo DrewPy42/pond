@@ -130,3 +130,15 @@ All ledger routes are Space-scoped (`/api/spaces/:spaceId/...`) and declared thr
 - **Transfers:** two transactions with equal and opposite amounts on different accounts of the same currency; you must be able to edit both accounts.
 - **Starter categories** are seeded when a Space is created, and at startup for any Space that has never had categories.
 - **Response and request shapes** are shared in `packages/shared` (`ledger.ts` zod schemas, `ledgerViews.ts` types).
+
+## SimpleFIN sync (M3)
+
+Implemented in `apps/server/src/simplefin/` (protocol client) and `apps/server/src/sync/` (rules and scheduling).
+
+- **One door to the network:** `SimpleFinClient` (`claim`, `fetchAccounts`). The real one uses Node's built-in `fetch`; tests use a scripted fake, so no test touches the network.
+- **Connect (admin only, `/api/connections`):** the Setup Token is decoded, claimed once, and the Access URL is stored encrypted before anything else can fail (the token is single-use). The token is never stored. Discovery then lists the bank's accounts as hidden, unassigned local accounts; an admin gives each a Space, which turns syncing on.
+- **Pull:** `syncConnection` asks for pending transactions since 14 days before the last successful sync (90 days the first time). Manual "Sync now" is limited to once per 5 minutes. A scheduler in the server process runs every 12 hours by default (`POND_SYNC_INTERVAL_HOURS`, clamped 4 to 24), with jitter, never overlapping, and logs counts only.
+- **Rules** are pure and live in `sync/plan.ts` (`planSync`): new, unchanged and changed transactions by `(account, external_id)`; amount changes follow a lone split but flag multi-split transactions for review; user-edited rows are never overwritten.
+- **Pending reconciliation:** a pending transaction the bank stops listing (inside the fetch window) is marked removed unless a person edited it, in which case it stays and is flagged. A new posted transaction with the same amount, within 5 days and with similar text, inherits the pending one's splits, categories, payee and memo; the pending one is marked `superseded_by` the new one so it can't be matched twice.
+- **Safety:** all URLs must be public `https` on port 443 (no localhost or private ranges, no redirects) because an admin pastes them. Server messages are stripped of control characters and length-limited before they are stored or shown. Amounts are decimal strings converted to cents without floats; a real fraction of a cent skips that account instead of rounding. An account with unreadable data is skipped whole and the sync window is not advanced past it.
+- **Bank-fed accounts** can't have transactions typed in by hand; their balance snapshots come from sync (`source = sync`).

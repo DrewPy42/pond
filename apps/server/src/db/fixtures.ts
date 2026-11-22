@@ -118,4 +118,42 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
       }
     },
   },
+  {
+    version: 4,
+    description: 'M3: SimpleFIN (connections, synced accounts, user_edited flag)',
+    seed(db) {
+      db.exec(`
+        INSERT INTO users (id, username, display_name, password_hash, is_admin, status)
+          VALUES ('u1', 'admin', 'Admin', '$argon2id$stub', 1, 'active');
+        INSERT INTO spaces (id, name, type, currency) VALUES ('s1', 'Home', 'personal', 'USD');
+        INSERT INTO connections (id, label, access_url_enc, created_by, status, last_synced_at)
+          VALUES ('c1', 'My bank', 'v1:stub:stub', 'u1', 'active', '2030-01-05T00:00:00Z');
+        INSERT INTO accounts (id, name, type, currency, primary_space_id, is_manual, connection_id, external_id, sync_enabled)
+          VALUES ('acc1', 'Bank Checking', 'checking', 'USD', 's1', 0, 'c1', 'ACT-1', 1);
+        INSERT INTO transactions (id, account_id, external_id, source, date, amount_cents, description_raw, user_edited, superseded_by)
+          VALUES ('t1', 'acc1', 'TX-1', 'simplefin', '2030-01-04', -4200, 'COFFEE', 1, 'newer');
+        INSERT INTO splits (id, transaction_id, space_id, amount_cents) VALUES ('sp1', 't1', 's1', -4200);
+      `)
+    },
+    verify(db) {
+      const c = one<{ status: string; access_url_enc: string }>(
+        db,
+        "SELECT status, access_url_enc FROM connections WHERE id = 'c1'",
+      )
+      if (c.status !== 'active' || c.access_url_enc !== 'v1:stub:stub')
+        throw new Error('connection changed')
+      const a = one<{ connection_id: string; external_id: string }>(
+        db,
+        "SELECT connection_id, external_id FROM accounts WHERE id = 'acc1'",
+      )
+      if (a.connection_id !== 'c1' || a.external_id !== 'ACT-1')
+        throw new Error('synced account changed')
+      const t = one<{ user_edited: number; amount_cents: number }>(
+        db,
+        "SELECT user_edited, amount_cents FROM transactions WHERE id = 't1'",
+      )
+      if (t.user_edited !== 1 || t.amount_cents !== -4200)
+        throw new Error('synced transaction changed')
+    },
+  },
 ]

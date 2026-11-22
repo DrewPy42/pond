@@ -130,9 +130,7 @@
       "indexes": {
         "accounts_space_idx": {
           "name": "accounts_space_idx",
-          "columns": [
-            "primary_space_id"
-          ],
+          "columns": ["primary_space_id"],
           "isUnique": false
         }
       },
@@ -141,12 +139,8 @@
           "name": "accounts_primary_space_id_spaces_id_fk",
           "tableFrom": "accounts",
           "tableTo": "spaces",
-          "columnsFrom": [
-            "primary_space_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["primary_space_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -233,16 +227,12 @@
       "indexes": {
         "audit_log_at_idx": {
           "name": "audit_log_at_idx",
-          "columns": [
-            "at"
-          ],
+          "columns": ["at"],
           "isUnique": false
         },
         "audit_log_action_idx": {
           "name": "audit_log_action_idx",
-          "columns": [
-            "action"
-          ],
+          "columns": ["action"],
           "isUnique": false
         }
       },
@@ -308,10 +298,7 @@
       "indexes": {
         "balance_snapshots_account_date_unique": {
           "name": "balance_snapshots_account_date_unique",
-          "columns": [
-            "account_id",
-            "date"
-          ],
+          "columns": ["account_id", "date"],
           "isUnique": true
         }
       },
@@ -320,12 +307,8 @@
           "name": "balance_snapshots_account_id_accounts_id_fk",
           "tableFrom": "balance_snapshots",
           "tableTo": "accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -414,9 +397,7 @@
       "indexes": {
         "categories_space_idx": {
           "name": "categories_space_idx",
-          "columns": [
-            "space_id"
-          ],
+          "columns": ["space_id"],
           "isUnique": false
         }
       },
@@ -425,12 +406,8 @@
           "name": "categories_space_id_spaces_id_fk",
           "tableFrom": "categories",
           "tableTo": "spaces",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -482,9 +459,7 @@
       "indexes": {
         "recovery_codes_user_idx": {
           "name": "recovery_codes_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -493,12 +468,8 @@
           "name": "recovery_codes_user_id_users_id_fk",
           "tableFrom": "recovery_codes",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -585,9 +556,7 @@
       "indexes": {
         "sessions_user_idx": {
           "name": "sessions_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -596,12 +565,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -662,20 +627,14 @@
       "indexes": {
         "settings_key_idx": {
           "name": "settings_key_idx",
-          "columns": [
-            "key"
-          ],
+          "columns": ["key"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "settings_scope_scope_id_key_pk": {
-          "columns": [
-            "scope",
-            "scope_id",
-            "key"
-          ],
+          "columns": ["scope", "scope_id", "key"],
           "name": "settings_scope_scope_id_key_pk"
         }
       },
@@ -726,9 +685,7 @@
       "indexes": {
         "space_members_user_idx": {
           "name": "space_members_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -737,12 +694,8 @@
           "name": "space_members_space_id_spaces_id_fk",
           "tableFrom": "space_members",
           "tableTo": "spaces",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -750,22 +703,15 @@
           "name": "space_members_user_id_users_id_fk",
           "tableFrom": "space_members",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "space_members_space_id_user_id_pk": {
-          "columns": [
-            "space_id",
-            "user_id"
-          ],
+          "columns": ["space_id", "user_id"],
           "name": "space_members_space_id_user_id_pk"
         }
       },
@@ -914,16 +860,12 @@
       "indexes": {
         "splits_txn_idx": {
           "name": "splits_txn_idx",
-          "columns": [
-            "transaction_id"
-          ],
+          "columns": ["transaction_id"],
           "isUnique": false
         },
         "splits_space_idx": {
           "name": "splits_space_idx",
-          "columns": [
-            "space_id"
-          ],
+          "columns": ["space_id"],
           "isUnique": false
         }
       },
@@ -932,12 +874,8 @@
           "name": "splits_transaction_id_transactions_id_fk",
           "tableFrom": "splits",
           "tableTo": "transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -945,12 +883,8 @@
           "name": "splits_space_id_spaces_id_fk",
           "tableFrom": "splits",
           "tableTo": "spaces",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -958,12 +892,8 @@
           "name": "splits_category_id_categories_id_fk",
           "tableFrom": "splits",
           "tableTo": "categories",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1104,18 +1034,12 @@
       "indexes": {
         "transactions_account_date_idx": {
           "name": "transactions_account_date_idx",
-          "columns": [
-            "account_id",
-            "date"
-          ],
+          "columns": ["account_id", "date"],
           "isUnique": false
         },
         "transactions_account_external_unique": {
           "name": "transactions_account_external_unique",
-          "columns": [
-            "account_id",
-            "external_id"
-          ],
+          "columns": ["account_id", "external_id"],
           "isUnique": true,
           "where": "\"transactions\".\"external_id\" is not null"
         }
@@ -1125,12 +1049,8 @@
           "name": "transactions_account_id_accounts_id_fk",
           "tableFrom": "transactions",
           "tableTo": "accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1182,16 +1102,12 @@
       "indexes": {
         "transfer_links_from_unique": {
           "name": "transfer_links_from_unique",
-          "columns": [
-            "from_transaction_id"
-          ],
+          "columns": ["from_transaction_id"],
           "isUnique": true
         },
         "transfer_links_to_unique": {
           "name": "transfer_links_to_unique",
-          "columns": [
-            "to_transaction_id"
-          ],
+          "columns": ["to_transaction_id"],
           "isUnique": true
         }
       },
@@ -1200,12 +1116,8 @@
           "name": "transfer_links_from_transaction_id_transactions_id_fk",
           "tableFrom": "transfer_links",
           "tableTo": "transactions",
-          "columnsFrom": [
-            "from_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1213,12 +1125,8 @@
           "name": "transfer_links_to_transaction_id_transactions_id_fk",
           "tableFrom": "transfer_links",
           "tableTo": "transactions",
-          "columnsFrom": [
-            "to_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1322,9 +1230,7 @@
       "indexes": {
         "users_username_unique": {
           "name": "users_username_unique",
-          "columns": [
-            "username"
-          ],
+          "columns": ["username"],
           "isUnique": true
         }
       },

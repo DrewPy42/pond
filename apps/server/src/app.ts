@@ -4,6 +4,7 @@ import type { AppContext } from './context.js'
 import { csrfGuard, sessionMiddleware } from './middleware/auth.js'
 import { auditRouter } from './routes/audit.js'
 import { authRouter } from './routes/auth.js'
+import { connectionsRouter } from './routes/connections.js'
 import { healthRouter } from './routes/health.js'
 import { spacesRouter } from './routes/spaces.js'
 import { usersRouter } from './routes/users.js'
@@ -34,6 +35,7 @@ export function createApp(ctx: AppContext): Express {
   app.use('/api/users', usersRouter(ctx))
   app.use('/api/spaces', spacesRouter(ctx))
   app.use('/api/audit-log', auditRouter(ctx))
+  app.use('/api/connections', connectionsRouter(ctx))
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' })

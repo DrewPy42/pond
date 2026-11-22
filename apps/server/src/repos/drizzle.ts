@@ -21,6 +21,7 @@ import {
   auditLog,
   balanceSnapshots,
   categories,
+  connections,
   recoveryCodes,
   sessions,
   spaceMembers,
@@ -65,6 +66,7 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
 
   const toAccount = (r: typeof accounts.$inferSelect): AccountRecord => ({
     id: r.id,
+    connectionId: r.connectionId,
     externalId: r.externalId,
     institutionName: r.institutionName,
     name: r.name,
@@ -105,6 +107,8 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
     status: r.status,
     private: r.private,
     needsReview: r.needsReview,
+    userEdited: r.userEdited,
+    supersededBy: r.supersededBy,
   })
   const toSplit = (r: typeof splitsTable.$inferSelect): SplitRecord => ({
     id: r.id,
@@ -375,6 +379,52 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
           })),
     },
 
+    connections: {
+      create: (c) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(connections)
+              .values({ ...c, createdAt: iso(), updatedAt: iso() })
+              .run(),
+        ),
+      findById: (id) => {
+        const r = db.select().from(connections).where(eq(connections.id, id)).get()
+        return (
+          r && {
+            id: r.id,
+            label: r.label,
+            accessUrlEnc: r.accessUrlEnc,
+            createdBy: r.createdBy,
+            status: r.status,
+            lastSyncedAt: r.lastSyncedAt,
+            lastError: r.lastError,
+          }
+        )
+      },
+      list: () =>
+        db
+          .select()
+          .from(connections)
+          .orderBy(asc(connections.label), asc(connections.id))
+          .all()
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            accessUrlEnc: r.accessUrlEnc,
+            createdBy: r.createdBy,
+            status: r.status,
+            lastSyncedAt: r.lastSyncedAt,
+            lastError: r.lastError,
+          })),
+      update: (id, patch) =>
+        void db
+          .update(connections)
+          .set({ ...patch, updatedAt: iso() })
+          .where(eq(connections.id, id))
+          .run(),
+    },
+
     accounts: {
       create: (a) =>
         mapWrite(
@@ -386,6 +436,9 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
                 name: a.name,
                 type: a.type,
                 currency: a.currency,
+                connectionId: a.connectionId ?? null,
+                externalId: a.externalId ?? null,
+                syncEnabled: a.syncEnabled ?? false,
                 institutionName: a.institutionName ?? null,
                 nickname: a.nickname ?? null,
                 primarySpaceId: a.primarySpaceId ?? null,
@@ -421,6 +474,22 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
           .set({ ...patch, updatedAt: iso() })
           .where(eq(accounts.id, id))
           .run(),
+      findByExternal: (connectionId, externalId) => {
+        const r = db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.connectionId, connectionId), eq(accounts.externalId, externalId)))
+          .get()
+        return r && toAccount(r)
+      },
+      listForConnection: (connectionId) =>
+        db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.connectionId, connectionId))
+          .orderBy(asc(accounts.name), asc(accounts.id))
+          .all()
+          .map(toAccount),
     },
 
     balances: {
@@ -567,6 +636,7 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
                 pending: t.pending ?? false,
                 private: t.private ?? false,
                 needsReview: t.needsReview ?? false,
+                userEdited: t.userEdited ?? false,
                 createdAt: iso(),
                 updatedAt: iso(),
               })
@@ -701,6 +771,52 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
           })),
         }
       },
+      findByExternalId(accountId, externalId) {
+        const r = db
+          .select({ t: transactions, a: accounts })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(
+            and(eq(transactions.accountId, accountId), eq(transactions.externalId, externalId)),
+          )
+          .get()
+        if (!r) return undefined
+        return {
+          txn: toTxn(r.t),
+          splits: splitsOf(r.t.id),
+          account: {
+            id: r.a.id,
+            name: r.a.name,
+            primarySpaceId: r.a.primarySpaceId,
+            currency: r.a.currency,
+          },
+        }
+      },
+      listForAccountSince(accountId, fromDate) {
+        const rows = db
+          .select({ t: transactions, a: accounts })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(and(eq(transactions.accountId, accountId), gte(transactions.date, fromDate)))
+          .orderBy(desc(transactions.date), desc(transactions.id))
+          .all()
+        return rows.map((r) => ({
+          txn: toTxn(r.t),
+          splits: splitsOf(r.t.id),
+          account: {
+            id: r.a.id,
+            name: r.a.name,
+            primarySpaceId: r.a.primarySpaceId,
+            currency: r.a.currency,
+          },
+        }))
+      },
+      countForAccount: (accountId) =>
+        db
+          .select({ n: count() })
+          .from(transactions)
+          .where(eq(transactions.accountId, accountId))
+          .get()?.n ?? 0,
       findInvariantViolations() {
         const rows = db
           .select({

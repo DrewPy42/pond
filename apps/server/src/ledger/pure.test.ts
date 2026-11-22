@@ -23,6 +23,8 @@ const txn = (over: Partial<TransactionRecord> = {}): TransactionRecord => ({
   status: 'active',
   private: false,
   needsReview: true,
+  userEdited: false,
+  supersededBy: null,
   ...over,
 })
 const split = (

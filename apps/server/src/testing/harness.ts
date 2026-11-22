@@ -9,11 +9,14 @@ import type { AppContext } from '../context.js'
 import { createCrypto } from '../crypto/index.js'
 import { createLogger } from '../logger.js'
 import { createFakeRepos } from './fakeRepos.js'
+import { FakeSimpleFin } from './fakeSimpleFin.js'
 
 export const PASSWORD = 'correct-horse-battery-1'
 
 export interface TestEnv {
   ctx: AppContext
+  /** Script what the "bank" returns and inspect what we asked. */
+  simplefin: FakeSimpleFin
   app: Express
   /** Move the injected clock forward. */
   advance(ms: number): void
@@ -27,6 +30,7 @@ export function makeEnv(opts: { withSetupCode?: boolean } = {}): TestEnv {
   let t = Date.parse('2026-01-01T12:00:00Z')
   const clock = () => t
   let idCounter = 0
+  const simplefin = new FakeSimpleFin()
   const ctx: AppContext = {
     repos: createFakeRepos(() => new Date(t)),
     crypto: createCrypto(randomBytes(32)),
@@ -36,9 +40,11 @@ export function makeEnv(opts: { withSetupCode?: boolean } = {}): TestEnv {
     cookieSecure: false,
     now: () => new Date(t),
     newId: () => `id-${++idCounter}`,
+    simplefin,
+    timeZone: 'UTC',
     spaceRoutes: [],
   }
-  return { ctx, app: createApp(ctx), advance: (ms) => void (t += ms) }
+  return { ctx, simplefin, app: createApp(ctx), advance: (ms) => void (t += ms) }
 }
 
 export interface Res {

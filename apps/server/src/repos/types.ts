@@ -172,6 +172,7 @@ export type AccountType =
 
 export interface AccountRecord {
   id: string
+  connectionId: string | null
   externalId: string | null
   institutionName: string | null
   name: string
@@ -197,6 +198,9 @@ export type NewAccount = Pick<AccountRecord, 'id' | 'name' | 'type' | 'currency'
       | 'includeInNetWorth'
       | 'lastFour'
       | 'hidden'
+      | 'connectionId'
+      | 'externalId'
+      | 'syncEnabled'
     >
   >
 export type AccountPatch = Partial<
@@ -210,6 +214,8 @@ export type AccountPatch = Partial<
     | 'hidden'
     | 'lastFour'
     | 'archivedAt'
+    | 'primarySpaceId'
+    | 'syncEnabled'
   >
 >
 export interface AccountRepo {
@@ -218,6 +224,9 @@ export interface AccountRepo {
   /** Accounts whose primary Space is `spaceId`, ordered by name. Archived ones only on request. */
   listForSpace(spaceId: string, opts?: { includeArchived?: boolean }): AccountRecord[]
   update(id: string, patch: AccountPatch): void
+  findByExternal(connectionId: string, externalId: string): AccountRecord | undefined
+  /** Every account a connection brought in, assigned or not. Ordered by name. */
+  listForConnection(connectionId: string): AccountRecord[]
 }
 
 export interface BalanceSnapshotRecord {
@@ -280,6 +289,8 @@ export interface TransactionRecord {
   status: 'active' | 'removed'
   private: boolean
   needsReview: boolean
+  userEdited: boolean
+  supersededBy: string | null
 }
 export type NewTransaction = Pick<
   TransactionRecord,
@@ -296,6 +307,7 @@ export type NewTransaction = Pick<
       | 'pending'
       | 'private'
       | 'needsReview'
+      | 'userEdited'
     >
   >
 export type TransactionPatch = Partial<
@@ -310,6 +322,10 @@ export type TransactionPatch = Partial<
     | 'private'
     | 'needsReview'
     | 'status'
+    | 'userEdited'
+    | 'postedAt'
+    | 'transactedAt'
+    | 'supersededBy'
   >
 >
 
@@ -362,6 +378,11 @@ export interface TransactionRepo {
     filters: TransactionFilters,
     page: { limit: number; offset: number },
   ): { rows: TransactionWithSplits[]; total: number }
+  /** A bank-fed transaction by the bank's own id, in any status. */
+  findByExternalId(accountId: string, externalId: string): TransactionWithSplits | undefined
+  /** Every transaction on the account dated on/after `fromDate` (YYYY-MM-DD), any status. */
+  listForAccountSince(accountId: string, fromDate: string): TransactionWithSplits[]
+  countForAccount(accountId: string): number
   /** Ids of active transactions whose splits don't balance (should always be empty). */
   findInvariantViolations(): string[]
 }
@@ -379,12 +400,39 @@ export interface TransferRepo {
   delete(id: string): void
 }
 
+// ---------- SimpleFIN connections (M3) ----------
+
+export interface ConnectionRecord {
+  id: string
+  label: string
+  /** Encrypted Access URL; null after the connection is revoked. */
+  accessUrlEnc: string | null
+  createdBy: string
+  status: 'active' | 'error' | 'revoked'
+  lastSyncedAt: string | null
+  lastError: string | null
+}
+export interface ConnectionRepo {
+  /** Throws MissingParentError if `createdBy` isn't a user. */
+  create(c: Pick<ConnectionRecord, 'id' | 'label' | 'accessUrlEnc' | 'createdBy'>): void
+  findById(id: string): ConnectionRecord | undefined
+  /** Ordered by label. */
+  list(): ConnectionRecord[]
+  update(
+    id: string,
+    patch: Partial<
+      Pick<ConnectionRecord, 'label' | 'accessUrlEnc' | 'status' | 'lastSyncedAt' | 'lastError'>
+    >,
+  ): void
+}
+
 export interface Repos {
   users: UserRepo
   recoveryCodes: RecoveryCodeRepo
   sessions: SessionRepo
   spaces: SpaceRepo
   audit: AuditRepo
+  connections: ConnectionRepo
   accounts: AccountRepo
   balances: BalanceRepo
   categories: CategoryRepo

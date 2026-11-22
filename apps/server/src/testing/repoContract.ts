@@ -786,4 +786,159 @@ export function repoContract(label: string, make: () => Repos): void {
       ).toThrow(MissingParentError)
     })
   })
+
+  describe(`${label}: ConnectionRepo and synced accounts`, () => {
+    const withUser = () => {
+      const r = ledgerWorld()
+      r.users.create(buildUser({ id: 'adm', username: 'adm', isAdmin: true }))
+      return r
+    }
+
+    /**
+     * Function: connections.create, findById, list, update
+     * Inputs:   connections "Zeta Bank" and "Alpha Bank" created by "adm"; then Alpha marked error
+     *           with a message, then revoked with its access URL cleared
+     * Expected: listed by label; new ones are active with no sync time; update stores status,
+     *           lastSyncedAt and lastError; revoke leaves accessUrlEnc null
+     */
+    it('stores connections and tracks their status', () => {
+      const r = withUser()
+      r.connections.create({
+        id: 'c1',
+        label: 'Zeta Bank',
+        accessUrlEnc: 'v1:a:b',
+        createdBy: 'adm',
+      })
+      r.connections.create({
+        id: 'c2',
+        label: 'Alpha Bank',
+        accessUrlEnc: 'v1:c:d',
+        createdBy: 'adm',
+      })
+      expect(r.connections.list().map((c) => c.label)).toEqual(['Alpha Bank', 'Zeta Bank'])
+      expect(r.connections.findById('c2')).toMatchObject({
+        status: 'active',
+        lastSyncedAt: null,
+        lastError: null,
+        accessUrlEnc: 'v1:c:d',
+      })
+      r.connections.update('c2', {
+        status: 'error',
+        lastError: 'bad',
+        lastSyncedAt: '2030-01-01T00:00:00.000Z',
+      })
+      expect(r.connections.findById('c2')).toMatchObject({
+        status: 'error',
+        lastError: 'bad',
+        lastSyncedAt: '2030-01-01T00:00:00.000Z',
+      })
+      r.connections.update('c2', { status: 'revoked', accessUrlEnc: null })
+      expect(r.connections.findById('c2')!.accessUrlEnc).toBeNull()
+      expect(r.connections.findById('none')).toBeUndefined()
+    })
+
+    /**
+     * Function: connections.create(connection)
+     * Inputs:   a connection created by a user that doesn't exist
+     * Expected: throws MissingParentError
+     */
+    it('refuses a connection from an unknown user', () => {
+      expect(() =>
+        make().connections.create({ id: 'c', label: 'x', accessUrlEnc: null, createdBy: 'ghost' }),
+      ).toThrow(MissingParentError)
+    })
+
+    /**
+     * Function: accounts.create (bank-fed), findByExternal, listForConnection, update
+     * Inputs:   two bank accounts "ACT-1" and "ACT-2" on connection c1 (unassigned, hidden), the
+     *           same bank id "ACT-1" again on c1 and on another connection c2; then assign ACT-1
+     *           to Space S1 with syncing on
+     * Expected: findByExternal returns the right one; the duplicate on c1 throws DuplicateError
+     *           while c2 may reuse the id; an unknown connection throws MissingParentError;
+     *           listForConnection is by name; update stores the Space and sync flag
+     */
+    it('keeps one local account per bank account and connection', () => {
+      const r = withUser()
+      r.connections.create({ id: 'c1', label: 'One', accessUrlEnc: 'x', createdBy: 'adm' })
+      r.connections.create({ id: 'c2', label: 'Two', accessUrlEnc: 'x', createdBy: 'adm' })
+      const bank = (id: string, name: string, connectionId: string, externalId: string) =>
+        r.accounts.create(
+          buildAccount({
+            id,
+            name,
+            connectionId,
+            externalId,
+            isManual: false,
+            hidden: true,
+            syncEnabled: false,
+          }),
+        )
+      bank('a2', 'Savings', 'c1', 'ACT-2')
+      bank('a1', 'Checking', 'c1', 'ACT-1')
+      expect(r.accounts.findByExternal('c1', 'ACT-1')).toMatchObject({
+        id: 'a1',
+        isManual: false,
+        hidden: true,
+        syncEnabled: false,
+        primarySpaceId: null,
+      })
+      expect(r.accounts.findByExternal('c1', 'nope')).toBeUndefined()
+      expect(() => bank('a3', 'Dupe', 'c1', 'ACT-1')).toThrow(DuplicateError)
+      expect(() => bank('a4', 'Other bank', 'c2', 'ACT-1')).not.toThrow()
+      expect(() => bank('a5', 'Orphan', 'ghost', 'ACT-9')).toThrow(MissingParentError)
+      expect(r.accounts.listForConnection('c1').map((a) => a.name)).toEqual(['Checking', 'Savings'])
+      r.accounts.update('a1', { primarySpaceId: 'S1', hidden: false, syncEnabled: true })
+      expect(r.accounts.findById('a1')).toMatchObject({
+        primarySpaceId: 'S1',
+        hidden: false,
+        syncEnabled: true,
+      })
+    })
+  })
+
+  describe(`${label}: TransactionRepo (bank-fed lookups)`, () => {
+    /**
+     * Function: transactions.findByExternalId, listForAccountSince, countForAccount, update
+     * Inputs:   three transactions on A1 (two with bank ids, one manual) and one on A2; mark one
+     *           pending as removed and superseded by another
+     * Expected: findByExternalId finds by (account, bank id) in any status; listForAccountSince
+     *           returns only that account's transactions on/after the date, any status;
+     *           countForAccount counts them all; userEdited and supersededBy are stored
+     */
+    it('finds bank-fed transactions, lists a window, counts, and tracks edits and supersession', () => {
+      const r = ledgerWorld()
+      const add = (id: string, accountId: string, date: string, externalId?: string) =>
+        r.transactions.create(
+          buildTransaction({
+            id,
+            accountId,
+            date,
+            externalId,
+            source: externalId ? 'simplefin' : 'manual',
+            pending: id === 'p1',
+          }),
+          [sp(`${id}-s`, accountId === 'A1' ? 'S1' : 'S2', -1000)],
+        )
+      add('p1', 'A1', '2030-01-10', 'BANK-P')
+      add('t2', 'A1', '2030-01-12', 'BANK-2')
+      add('t3', 'A1', '2030-01-02')
+      add('t4', 'A2', '2030-01-12', 'BANK-2')
+      expect(r.transactions.findByExternalId('A1', 'BANK-2')!.txn.id).toBe('t2')
+      expect(r.transactions.findByExternalId('A2', 'BANK-2')!.txn.id).toBe('t4')
+      expect(r.transactions.findByExternalId('A1', 'nope')).toBeUndefined()
+
+      r.transactions.update('p1', { status: 'removed', supersededBy: 't2', userEdited: true })
+      expect(r.transactions.findById('p1')!.txn).toMatchObject({
+        status: 'removed',
+        supersededBy: 't2',
+        userEdited: true,
+      })
+      expect(r.transactions.listForAccountSince('A1', '2030-01-05').map((x) => x.txn.id)).toEqual([
+        't2',
+        'p1',
+      ])
+      expect(r.transactions.countForAccount('A1')).toBe(3)
+      expect(r.transactions.countForAccount('A2')).toBe(1)
+    })
+  })
 }

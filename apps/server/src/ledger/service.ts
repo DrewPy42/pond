@@ -309,7 +309,9 @@ export function createTransaction(
     splits?: SplitInputBody[]
   },
 ): TransactionView {
-  accountInSpace(d.repos, spaceId, input.accountId)
+  const account = accountInSpace(d.repos, spaceId, input.accountId)
+  // Bank-fed accounts get their transactions from the bank; typing them too would duplicate them.
+  if (!account.isManual) throw new LedgerError(409, 'synced_account')
   const splits = buildSplits(
     d,
     actor,
@@ -364,7 +366,11 @@ export function updateTransaction(
   translate(() =>
     d.repos.transactions.update(
       txnId,
-      { ...rest, ...(description === undefined ? {} : { descriptionRaw: description }) },
+      {
+        ...rest,
+        userEdited: true,
+        ...(description === undefined ? {} : { descriptionRaw: description }),
+      },
       splits,
     ),
   )

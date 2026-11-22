@@ -93,3 +93,26 @@ export interface TransferView {
   fromTransactionId: string
   toTransactionId: string
 }
+
+/** A bank account brought in by a SimpleFIN connection. */
+export interface ConnectionAccountView {
+  id: string
+  name: string
+  type: string
+  currency: string
+  institutionName: string | null
+  /** null until an admin gives it a Space; unassigned accounts stay hidden and aren't synced. */
+  primarySpaceId: string | null
+  syncEnabled: boolean
+  hidden: boolean
+}
+
+/** A SimpleFIN connection. It never includes the Access URL, encrypted or not. */
+export interface ConnectionView {
+  id: string
+  label: string
+  status: 'active' | 'error' | 'revoked'
+  lastSyncedAt: string | null
+  lastError: string | null
+  accounts: ConnectionAccountView[]
+}

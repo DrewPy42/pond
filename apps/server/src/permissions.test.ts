@@ -175,6 +175,12 @@ describe('all other API endpoints are closed to anonymous callers', () => {
     ['get', '/api/spaces'],
     ['post', '/api/spaces'],
     ['get', '/api/audit-log'],
+    ['get', '/api/connections'],
+    ['post', '/api/connections'],
+    ['post', '/api/connections/some-id/sync'],
+    ['post', '/api/connections/some-id/discover'],
+    ['patch', '/api/connections/some-id/accounts/acct-id'],
+    ['delete', '/api/connections/some-id'],
   ]
   /**
    * Function: requireAuth on every non-public endpoint (listed below)

@@ -7,6 +7,9 @@ import { openDb, runMigrations } from './db/index.js'
 import { newId } from './db/ids.js'
 import { seedMissingCategories } from './ledger/service.js'
 import { createLogger } from './logger.js'
+import { createHttpSimpleFinClient } from './simplefin/client.js'
+import { clampIntervalHours, startSyncScheduler } from './sync/scheduler.js'
+import { syncAll } from './sync/service.js'
 import { createDrizzleRepos } from './repos/drizzle.js'
 
 const config = loadConfig()
@@ -27,6 +30,8 @@ if (setupCode.active) {
   )
 }
 
+const simplefin = createHttpSimpleFinClient()
+
 const app = createApp({
   repos,
   crypto,
@@ -36,14 +41,50 @@ const app = createApp({
   cookieSecure: config.cookieSecure,
   now: () => new Date(),
   newId,
+  simplefin,
+  timeZone: config.timeZone,
   spaceRoutes: [],
 })
 const server = app.listen(config.port, config.host, () => {
   log.info({ port: config.port, dataDir: config.dataDir }, 'Pond server listening')
 })
 
+const scheduler = startSyncScheduler({
+  run: async () => {
+    const results = await syncAll({
+      repos,
+      newId,
+      now: () => new Date(),
+      crypto,
+      client: simplefin,
+      timeZone: config.timeZone,
+    })
+    for (const [id, r] of Object.entries(results)) {
+      // Counts only: never the Access URL or bank data.
+      log.info(
+        {
+          connection: id,
+          ok: r.ok,
+          inserted: r.inserted,
+          updated: r.updated,
+          removed: r.removed,
+          warnings: r.warnings.length,
+        },
+        'bank sync finished',
+      )
+    }
+  },
+  intervalMs: clampIntervalHours(config.syncIntervalHours ?? Number.NaN) * 3_600_000,
+  onError: (e) =>
+    log.error(
+      { err: { name: (e as Error)?.name, message: (e as Error)?.message } },
+      'bank sync crashed',
+    ),
+})
+
 function shutdown(signal: string) {
   log.info({ signal }, 'shutting down')
+  scheduler.stop()
   server.close(() => {
     db.close()
     process.exit(0)
