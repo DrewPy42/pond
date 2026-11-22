@@ -44,6 +44,19 @@ const MESSAGES: Record<string, string> = {
   invalid_code: "That code didn't match. Check your authenticator app and try again.",
   invalid_input: 'Please check the highlighted fields.',
   username_taken: 'That username is taken.',
+  splits_do_not_balance:
+    "The splits don't add up to the total. Adjust them so nothing is left over.",
+  splits_required:
+    'This transaction has several splits, so enter the splits again for the new amount.',
+  linked_transfer: 'This is part of a linked transfer. Unlink it before changing the amount.',
+  not_manual: 'Only transactions you entered by hand can be deleted.',
+  forbidden_space: "You can't put money into a Space where you can't edit.",
+  invalid_category: 'Pick a category from the same Space as the split.',
+  already_linked: 'One of those transactions is already linked as a transfer.',
+  cannot_link:
+    "Those two transactions can't be linked: a transfer needs equal and opposite amounts on two different accounts in the same currency.",
+  forbidden: "You don't have permission to do that.",
+  not_found: "That wasn't found.",
 }
 export const errorMessage = (e: unknown): string =>
   e instanceof ApiError

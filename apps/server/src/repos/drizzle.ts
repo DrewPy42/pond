@@ -1,11 +1,47 @@
-import { and, asc, count, desc, eq, isNull, lt, ne } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { schemaVersion, type DbHandle } from '../db/index.js'
-import { auditLog, recoveryCodes, sessions, spaceMembers, spaces, users } from '../db/schema.js'
+import { checkSplits } from '../ledger/splits.js'
+import {
+  accounts,
+  auditLog,
+  balanceSnapshots,
+  categories,
+  recoveryCodes,
+  sessions,
+  spaceMembers,
+  spaces,
+  splits as splitsTable,
+  transactions,
+  transferLinks,
+  users,
+} from '../db/schema.js'
 import {
   DuplicateError,
   MissingParentError,
+  SplitInvariantError,
+  type AccountRecord,
   type AuditRecord,
+  type CategoryRecord,
+  type NewSplit,
   type Repos,
+  type SplitRecord,
+  type TransactionRecord,
+  type TransactionWithSplits,
   type SpaceRecord,
   type UserRecord,
 } from './types.js'
@@ -26,6 +62,98 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
     currency: r.currency,
     archivedAt: r.archivedAt,
   })
+
+  const toAccount = (r: typeof accounts.$inferSelect): AccountRecord => ({
+    id: r.id,
+    externalId: r.externalId,
+    institutionName: r.institutionName,
+    name: r.name,
+    nickname: r.nickname,
+    type: r.type,
+    currency: r.currency,
+    primarySpaceId: r.primarySpaceId,
+    isManual: r.isManual,
+    includeInNetWorth: r.includeInNetWorth,
+    syncEnabled: r.syncEnabled,
+    hidden: r.hidden,
+    lastFour: r.lastFour,
+    archivedAt: r.archivedAt,
+  })
+  const toCategory = (r: typeof categories.$inferSelect): CategoryRecord => ({
+    id: r.id,
+    spaceId: r.spaceId,
+    parentId: r.parentId,
+    name: r.name,
+    kind: r.kind,
+    taxLine: r.taxLine,
+    sortOrder: r.sortOrder,
+    archivedAt: r.archivedAt,
+  })
+  const toTxn = (r: typeof transactions.$inferSelect): TransactionRecord => ({
+    id: r.id,
+    accountId: r.accountId,
+    externalId: r.externalId,
+    source: r.source,
+    date: r.date,
+    postedAt: r.postedAt,
+    transactedAt: r.transactedAt,
+    amountCents: r.amountCents,
+    descriptionRaw: r.descriptionRaw,
+    payee: r.payee,
+    memo: r.memo,
+    pending: r.pending,
+    status: r.status,
+    private: r.private,
+    needsReview: r.needsReview,
+  })
+  const toSplit = (r: typeof splitsTable.$inferSelect): SplitRecord => ({
+    id: r.id,
+    transactionId: r.transactionId,
+    spaceId: r.spaceId,
+    categoryId: r.categoryId,
+    amountCents: r.amountCents,
+    memo: r.memo,
+    reimbursable: r.reimbursable,
+    reimbursedAt: r.reimbursedAt,
+  })
+  const splitsOf = (transactionId: string): SplitRecord[] =>
+    db
+      .select()
+      .from(splitsTable)
+      .where(eq(splitsTable.transactionId, transactionId))
+      .orderBy(asc(splitsTable.id))
+      .all()
+      .map(toSplit)
+  const insertSplits = (transactionId: string, list: NewSplit[]) => {
+    for (const sp of list) {
+      db.insert(splitsTable)
+        .values({
+          id: sp.id,
+          transactionId,
+          spaceId: sp.spaceId,
+          categoryId: sp.categoryId ?? null,
+          amountCents: sp.amountCents,
+          memo: sp.memo ?? null,
+          reimbursable: sp.reimbursable ?? false,
+          createdAt: iso(),
+          updatedAt: iso(),
+        })
+        .run()
+    }
+  }
+  const assertBalanced = (amountCents: number, list: readonly { amountCents: number }[]) => {
+    const problem = checkSplits(amountCents, list)
+    if (problem) throw new SplitInvariantError(problem)
+  }
+  const mapWrite = <T>(fn: () => T): T => {
+    try {
+      return fn()
+    } catch (e) {
+      if (isUnique(e)) throw new DuplicateError('duplicate')
+      if (isFk(e)) throw new MissingParentError('unknown parent row')
+      throw e
+    }
+  }
 
   return {
     users: {
@@ -245,6 +373,381 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
             spaceId: r.spaceId,
             meta: (r.meta as Record<string, unknown> | null) ?? null,
           })),
+    },
+
+    accounts: {
+      create: (a) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(accounts)
+              .values({
+                id: a.id,
+                name: a.name,
+                type: a.type,
+                currency: a.currency,
+                institutionName: a.institutionName ?? null,
+                nickname: a.nickname ?? null,
+                primarySpaceId: a.primarySpaceId ?? null,
+                isManual: a.isManual ?? true,
+                includeInNetWorth: a.includeInNetWorth ?? true,
+                hidden: a.hidden ?? false,
+                lastFour: a.lastFour ?? null,
+                createdAt: iso(),
+                updatedAt: iso(),
+              })
+              .run(),
+        ),
+      findById: (id) => {
+        const r = db.select().from(accounts).where(eq(accounts.id, id)).get()
+        return r && toAccount(r)
+      },
+      listForSpace: (spaceId, opts) =>
+        db
+          .select()
+          .from(accounts)
+          .where(
+            and(
+              eq(accounts.primarySpaceId, spaceId),
+              opts?.includeArchived ? undefined : isNull(accounts.archivedAt),
+            ),
+          )
+          .orderBy(asc(accounts.name), asc(accounts.id))
+          .all()
+          .map(toAccount),
+      update: (id, patch) =>
+        void db
+          .update(accounts)
+          .set({ ...patch, updatedAt: iso() })
+          .where(eq(accounts.id, id))
+          .run(),
+    },
+
+    balances: {
+      upsert(s) {
+        const existing = db
+          .select({ id: balanceSnapshots.id })
+          .from(balanceSnapshots)
+          .where(
+            and(eq(balanceSnapshots.accountId, s.accountId), eq(balanceSnapshots.date, s.date)),
+          )
+          .get()
+        mapWrite(() => {
+          if (existing) {
+            db.update(balanceSnapshots)
+              .set({
+                balanceCents: s.balanceCents,
+                availableCents: s.availableCents ?? null,
+                source: s.source,
+              })
+              .where(eq(balanceSnapshots.id, existing.id))
+              .run()
+          } else {
+            db.insert(balanceSnapshots)
+              .values({
+                id: s.id,
+                accountId: s.accountId,
+                date: s.date,
+                balanceCents: s.balanceCents,
+                availableCents: s.availableCents ?? null,
+                source: s.source,
+                createdAt: iso(),
+              })
+              .run()
+          }
+        })
+      },
+      listForAccount: (accountId, opts) =>
+        db
+          .select()
+          .from(balanceSnapshots)
+          .where(eq(balanceSnapshots.accountId, accountId))
+          .orderBy(desc(balanceSnapshots.date))
+          .limit(opts?.limit ?? 1000)
+          .all()
+          .map((r) => ({
+            id: r.id,
+            accountId: r.accountId,
+            date: r.date,
+            balanceCents: r.balanceCents,
+            availableCents: r.availableCents,
+            source: r.source,
+          })),
+      latestForAccounts(ids) {
+        const out = []
+        for (const accountId of ids) {
+          const r = db
+            .select()
+            .from(balanceSnapshots)
+            .where(eq(balanceSnapshots.accountId, accountId))
+            .orderBy(desc(balanceSnapshots.date))
+            .limit(1)
+            .get()
+          if (r) {
+            out.push({
+              id: r.id,
+              accountId: r.accountId,
+              date: r.date,
+              balanceCents: r.balanceCents,
+              availableCents: r.availableCents,
+              source: r.source,
+            })
+          }
+        }
+        return out
+      },
+    },
+
+    categories: {
+      create: (c) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(categories)
+              .values({
+                id: c.id,
+                spaceId: c.spaceId,
+                name: c.name,
+                kind: c.kind,
+                parentId: c.parentId ?? null,
+                taxLine: c.taxLine ?? null,
+                sortOrder: c.sortOrder ?? 0,
+                createdAt: iso(),
+                updatedAt: iso(),
+              })
+              .run(),
+        ),
+      findById: (id) => {
+        const r = db.select().from(categories).where(eq(categories.id, id)).get()
+        return r && toCategory(r)
+      },
+      listForSpace: (spaceId, opts) =>
+        db
+          .select()
+          .from(categories)
+          .where(
+            and(
+              eq(categories.spaceId, spaceId),
+              opts?.includeArchived ? undefined : isNull(categories.archivedAt),
+            ),
+          )
+          .orderBy(
+            sql`case ${categories.kind} when 'income' then 0 when 'expense' then 1 else 2 end`,
+            asc(categories.sortOrder),
+            asc(categories.name),
+          )
+          .all()
+          .map(toCategory),
+      update: (id, patch) =>
+        void db
+          .update(categories)
+          .set({ ...patch, updatedAt: iso() })
+          .where(eq(categories.id, id))
+          .run(),
+    },
+
+    transactions: {
+      create: (t, list) =>
+        mapWrite(() =>
+          handle.sqlite.transaction(() => {
+            assertBalanced(t.amountCents, list)
+            db.insert(transactions)
+              .values({
+                id: t.id,
+                accountId: t.accountId,
+                externalId: t.externalId ?? null,
+                source: t.source,
+                date: t.date,
+                postedAt: t.postedAt ?? null,
+                transactedAt: t.transactedAt ?? null,
+                amountCents: t.amountCents,
+                descriptionRaw: t.descriptionRaw,
+                payee: t.payee ?? null,
+                memo: t.memo ?? null,
+                pending: t.pending ?? false,
+                private: t.private ?? false,
+                needsReview: t.needsReview ?? false,
+                createdAt: iso(),
+                updatedAt: iso(),
+              })
+              .run()
+            insertSplits(t.id, list)
+          })(),
+        ),
+      findById(id) {
+        const r = db
+          .select({ t: transactions, a: accounts })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(eq(transactions.id, id))
+          .get()
+        if (!r) return undefined
+        return {
+          txn: toTxn(r.t),
+          splits: splitsOf(id),
+          account: {
+            id: r.a.id,
+            name: r.a.name,
+            primarySpaceId: r.a.primarySpaceId,
+            currency: r.a.currency,
+          },
+        }
+      },
+      update: (id, patch, newSplits) =>
+        mapWrite(() =>
+          handle.sqlite.transaction(() => {
+            const current = db.select().from(transactions).where(eq(transactions.id, id)).get()
+            if (!current) return
+            const finalAmount = patch.amountCents ?? current.amountCents
+            if (newSplits) assertBalanced(finalAmount, newSplits)
+            else if (patch.amountCents !== undefined) assertBalanced(finalAmount, splitsOf(id))
+            db.update(transactions)
+              .set({ ...patch, updatedAt: iso() })
+              .where(eq(transactions.id, id))
+              .run()
+            if (newSplits) {
+              db.delete(splitsTable).where(eq(splitsTable.transactionId, id)).run()
+              insertSplits(id, newSplits)
+            }
+          })(),
+        ),
+      listForSpace(spaceId, f, page) {
+        const like = (col: unknown, p: string) =>
+          sql`lower(coalesce(${col}, '')) like ${p} escape '\\'`
+        const pattern = f.q
+          ? `%${f.q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+          : undefined
+        const where = and(
+          eq(transactions.status, 'active'),
+          or(
+            eq(accounts.primarySpaceId, spaceId),
+            exists(
+              db
+                .select({ x: sql`1` })
+                .from(splitsTable)
+                .where(
+                  and(
+                    eq(splitsTable.transactionId, transactions.id),
+                    eq(splitsTable.spaceId, spaceId),
+                  ),
+                ),
+            ),
+          ),
+          f.accountId ? eq(transactions.accountId, f.accountId) : undefined,
+          f.categoryId
+            ? exists(
+                db
+                  .select({ x: sql`1` })
+                  .from(splitsTable)
+                  .where(
+                    and(
+                      eq(splitsTable.transactionId, transactions.id),
+                      eq(splitsTable.categoryId, f.categoryId),
+                    ),
+                  ),
+              )
+            : undefined,
+          f.from ? gte(transactions.date, f.from) : undefined,
+          f.to ? lte(transactions.date, f.to) : undefined,
+          pattern
+            ? or(
+                like(transactions.descriptionRaw, pattern),
+                like(transactions.payee, pattern),
+                like(transactions.memo, pattern),
+              )
+            : undefined,
+        )
+        const total =
+          db
+            .select({ n: count() })
+            .from(transactions)
+            .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+            .where(where)
+            .get()?.n ?? 0
+        const rows = db
+          .select({ t: transactions, a: accounts })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(where)
+          .orderBy(desc(transactions.date), desc(transactions.id))
+          .limit(page.limit)
+          .offset(page.offset)
+          .all()
+        const ids = rows.map((r) => r.t.id)
+        const byTxn = new Map<string, SplitRecord[]>()
+        if (ids.length) {
+          for (const sp of db
+            .select()
+            .from(splitsTable)
+            .where(inArray(splitsTable.transactionId, ids))
+            .orderBy(asc(splitsTable.id))
+            .all()) {
+            const list = byTxn.get(sp.transactionId) ?? []
+            list.push(toSplit(sp))
+            byTxn.set(sp.transactionId, list)
+          }
+        }
+        return {
+          total,
+          rows: rows.map((r): TransactionWithSplits => ({
+            txn: toTxn(r.t),
+            splits: byTxn.get(r.t.id) ?? [],
+            account: {
+              id: r.a.id,
+              name: r.a.name,
+              primarySpaceId: r.a.primarySpaceId,
+              currency: r.a.currency,
+            },
+          })),
+        }
+      },
+      findInvariantViolations() {
+        const rows = db
+          .select({
+            id: transactions.id,
+            amount: transactions.amountCents,
+            splitTotal: sql<number>`coalesce(sum(${splitsTable.amountCents}), 0)`,
+            n: count(splitsTable.id),
+          })
+          .from(transactions)
+          .leftJoin(splitsTable, eq(splitsTable.transactionId, transactions.id))
+          .where(eq(transactions.status, 'active'))
+          .groupBy(transactions.id)
+          .all()
+        return rows.filter((r) => r.n === 0 || r.splitTotal !== r.amount).map((r) => r.id)
+      },
+    },
+
+    transfers: {
+      create: (l) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(transferLinks)
+              .values({ ...l, createdAt: iso() })
+              .run(),
+        ),
+      findByTransaction(transactionId) {
+        const r = db
+          .select()
+          .from(transferLinks)
+          .where(
+            or(
+              eq(transferLinks.fromTransactionId, transactionId),
+              eq(transferLinks.toTransactionId, transactionId),
+            ),
+          )
+          .get()
+        return (
+          r && {
+            id: r.id,
+            fromTransactionId: r.fromTransactionId,
+            toTransactionId: r.toTransactionId,
+            createdBy: r.createdBy,
+          }
+        )
+      },
+      delete: (id) => void db.delete(transferLinks).where(eq(transferLinks.id, id)).run(),
     },
 
     system: { schemaVersion: () => schemaVersion(handle) },

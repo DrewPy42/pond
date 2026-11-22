@@ -3,6 +3,7 @@ import {
   allocateCents,
   assertCents,
   formatCents,
+  formatMoney,
   parseCents,
   splitsBalance,
   sumCents,
@@ -108,5 +109,27 @@ describe('allocateCents(total, parts)', () => {
    */
   it('never loses or creates cents', () => {
     expect(sumCents(allocateCents(1, 7))).toBe(1)
+  })
+})
+
+describe('formatMoney(cents, currency)', () => {
+  /**
+   * Inputs:   123456 (USD), -500 (USD), 99 (EUR), 0, 100000000 (a million dollars)
+   * Expected: "$1,234.56", "-$5.00", "€0.99", "$0.00", "$1,000,000.00"
+   */
+  it('formats cents with a symbol, thousands separators and a leading minus', () => {
+    expect(formatMoney(123456)).toBe('$1,234.56')
+    expect(formatMoney(-500)).toBe('-$5.00')
+    expect(formatMoney(99, 'EUR')).toBe('€0.99')
+    expect(formatMoney(0)).toBe('$0.00')
+    expect(formatMoney(100000000)).toBe('$1,000,000.00')
+  })
+
+  /**
+   * Inputs:   1250 in "CHF" (no symbol on file)
+   * Expected: "CHF 12.50" (the currency code is shown instead of guessing a symbol)
+   */
+  it('falls back to the currency code for unknown currencies', () => {
+    expect(formatMoney(1250, 'CHF')).toBe('CHF 12.50')
   })
 })

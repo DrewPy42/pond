@@ -66,4 +66,56 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
       }
     },
   },
+  {
+    version: 3,
+    description:
+      'M2: ledger (accounts, transactions, splits, categories, transfer links, balances)',
+    seed(db) {
+      db.exec(`
+        INSERT INTO users (id, username, display_name, password_hash, is_admin, status)
+          VALUES ('u1', 'admin', 'Admin', '$argon2id$stub', 1, 'active');
+        INSERT INTO spaces (id, name, type, currency) VALUES ('s1', 'Home', 'personal', 'USD');
+        INSERT INTO accounts (id, name, type, currency, primary_space_id, is_manual)
+          VALUES ('acc1', 'Checking', 'checking', 'USD', 's1', 1), ('acc2', 'Savings', 'savings', 'USD', 's1', 1);
+        INSERT INTO categories (id, space_id, name, kind) VALUES ('cat1', 's1', 'Groceries', 'expense');
+        INSERT INTO transactions (id, account_id, source, date, amount_cents, description_raw)
+          VALUES ('t1', 'acc1', 'manual', '2030-01-05', -12500, 'Market'),
+                 ('t2', 'acc1', 'manual', '2030-01-06', -50000, 'To savings'),
+                 ('t3', 'acc2', 'manual', '2030-01-06', 50000, 'From checking');
+        INSERT INTO splits (id, transaction_id, space_id, category_id, amount_cents)
+          VALUES ('sp1', 't1', 's1', 'cat1', -7500), ('sp2', 't1', 's1', NULL, -5000),
+                 ('sp3', 't2', 's1', NULL, -50000), ('sp4', 't3', 's1', NULL, 50000);
+        INSERT INTO transfer_links (id, from_transaction_id, to_transaction_id, created_by)
+          VALUES ('l1', 't2', 't3', 'user');
+        INSERT INTO balance_snapshots (id, account_id, date, balance_cents, source)
+          VALUES ('b1', 'acc1', '2030-01-06', 150000, 'manual');
+      `)
+    },
+    verify(db) {
+      const t = one<{ n: number; total: number }>(
+        db,
+        "SELECT count(*) AS n, sum(amount_cents) AS total FROM splits WHERE transaction_id = 't1'",
+      )
+      if (t.n !== 2 || t.total !== -12500)
+        throw new Error(`splits of t1 changed: ${JSON.stringify(t)}`)
+      const link = one<{ from_transaction_id: string }>(
+        db,
+        "SELECT from_transaction_id FROM transfer_links WHERE id = 'l1'",
+      )
+      if (link.from_transaction_id !== 't2') throw new Error('transfer link changed')
+      const b = one<{ balance_cents: number }>(
+        db,
+        "SELECT balance_cents FROM balance_snapshots WHERE id = 'b1'",
+      )
+      if (b.balance_cents !== 150000) throw new Error('balance snapshot changed')
+      for (const [table, expected] of [
+        ['accounts', 2],
+        ['transactions', 3],
+        ['categories', 1],
+      ] as const) {
+        const n = one<{ n: number }>(db, `SELECT count(*) AS n FROM ${table}`).n
+        if (n !== expected) throw new Error(`${table} lost or gained rows: ${n}`)
+      }
+    },
+  },
 ]

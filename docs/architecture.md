@@ -112,3 +112,21 @@ Add a component to the barrel the **second** time something is needed, not the f
 - Request and response **zod schemas, types and money helpers** live in `packages/shared`, used by both server and web, never redefined per side.
 - **Data access goes through repositories** (`apps/server/src/repos`): routes, middleware and services depend on interfaces (`UserRepo`, `SessionRepo`, `SpaceRepo`, `AuditRepo`, ...) passed in via `AppContext`. Only the Drizzle implementations touch the database, which keeps business logic testable on in-memory fakes (`testing.md`). New tables get a repository, a fake, and a contract test.
 - Cross-cutting server behavior is a helper, not copy-paste: `createSpaceRouter` and `requireSpace` for Space access, `validateBody` for input, `recordAudit` for the audit log. New routes use them.
+
+## Ledger (M2)
+
+All ledger routes are Space-scoped (`/api/spaces/:spaceId/...`) and declared through `createSpaceRouter`, so the permission suite covers each one automatically.
+
+| Area | Routes |
+|---|---|
+| Accounts | `GET/POST /accounts`, `GET/PATCH /accounts/:accountId`, `GET /accounts/:accountId/balances`, `PUT /accounts/:accountId/balances/:date` |
+| Categories | `GET/POST /categories`, `PATCH /categories/:categoryId` |
+| Transactions | `GET/POST /transactions`, `GET/PATCH/DELETE /transactions/:transactionId` |
+| Transfers | `POST /transfers`, `DELETE /transfers/:transactionId` |
+
+- **Where the rules live:** `apps/server/src/ledger/`: `splits.ts`, `visibility.ts`, `transfers.ts` and `categorySeeds.ts` are pure functions; `service.ts` applies them through the repositories; `routes/ledger.ts` only validates and responds.
+- **The split invariant** (every active transaction has at least one split and its splits sum exactly to its amount) is enforced inside `TransactionRepo.create/update`, so no write path can skip it. `findInvariantViolations()` exists to prove it holds.
+- **Cross-Space privacy:** a Space's transaction list includes transactions on other Spaces' accounts that have a split in it, shown through `viewTransaction` (see `data-model.md`). To put a split in another Space you must be able to edit that Space.
+- **Transfers:** two transactions with equal and opposite amounts on different accounts of the same currency; you must be able to edit both accounts.
+- **Starter categories** are seeded when a Space is created, and at startup for any Space that has never had categories.
+- **Response and request shapes** are shared in `packages/shared` (`ledger.ts` zod schemas, `ledgerViews.ts` types).
