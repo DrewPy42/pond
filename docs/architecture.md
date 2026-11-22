@@ -69,3 +69,46 @@ One household runs one Pond install on its own hardware. Pond pulls read-only ba
 7. **Finish:** emit `sync.completed`, update `connections.last_synced_at`, and record errors on the connection for the UI to show.
 
 One connection can feed many users. Accounts belong to Spaces, not to the token, so a child's account can sit in the child's Space while the parent's accounts stay invisible to them.
+
+## Modular UI and shared code
+
+Pond will have many screens (ledger, imports, reports, Settings, every LilyPad). To keep them consistent and small, **build from shared pieces and don't repeat markup or logic.** The same applies on the server.
+
+### Layers (web)
+
+1. **Vuetify 3 primitives.** The only component library (`CLAUDE.md`). Pages never reach for raw HTML controls where a Vuetify one exists.
+2. **Pond common components** in `apps/web/src/components/common/`, exported from one barrel (`index.ts`). These are thin, opinionated wrappers: the one input, table, dialog and card that the whole app uses. Brand, spacing, WCAG contrast, keyboard behavior and `aria` labels are fixed here once.
+3. **Composables** in `apps/web/src/composables/` for shared behavior (API calls and error mapping, pagination, form state and zod validation, debounced search, confirm-before-delete).
+4. **Pinia stores** for shared state (auth, Spaces, and later accounts and categories).
+5. **Feature views** in `apps/web/src/views/` that only compose the layers above.
+
+### Starter set
+
+`~/Sites/gloxV/client/src/components/common` is a good reference for *what* to share (its styling and Bootstrap/Font Awesome usage are **not** carried over). Expected components:
+
+| Component | Purpose |
+|---|---|
+| `FormField` | Label, input, hint and error in one; text, number, money, date, select, textarea |
+| `MoneyInput` / `MoneyAmount` | Enter and display `amount_cents`; sign plus icon plus contrast-safe color, never color alone |
+| `DataTable` | Sorting, paging, search, row actions, empty and loading states |
+| `Pagination`, `SearchSelect` | Shared by tables and pickers |
+| `Modal` / `ConfirmDialog` | One dialog pattern, focus trapped, Escape to close |
+| `Card`, `StatCard` | Page sections and dashboard figures |
+| `Toast` | One place for success and error messages |
+| `QrCode` | Already in use (TOTP enrollment) |
+
+Add a component to the barrel the **second** time something is needed, not the first guess. When you write the same markup or logic twice, extract it before writing it a third time.
+
+### Rules
+
+- **Props, slots and `v-model`, not copies.** Variation comes from props and slots; don't fork a component per page.
+- **Accessibility lives in the component.** A page can't ship an unlabeled input or low-contrast money color if it uses the shared one.
+- **Tested once.** Common components carry their own tests; pages then need fewer.
+- **LilyPads reuse them.** `packages/sdk` re-exports the common components and composables through its UI helpers, so a LilyPad looks and behaves like core without bundling its own copies (see `lilypad-contract.md`).
+- **No `v-html` with user data**, in any shared component.
+
+### Same idea on the server and in `packages/shared`
+
+- Request and response **zod schemas, types and money helpers** live in `packages/shared`, used by both server and web, never redefined per side.
+- **Data access goes through repositories** (`apps/server/src/repos`): routes, middleware and services depend on interfaces (`UserRepo`, `SessionRepo`, `SpaceRepo`, `AuditRepo`, ...) passed in via `AppContext`. Only the Drizzle implementations touch the database, which keeps business logic testable on in-memory fakes (`testing.md`). New tables get a repository, a fake, and a contract test.
+- Cross-cutting server behavior is a helper, not copy-paste: `createSpaceRouter` and `requireSpace` for Space access, `validateBody` for input, `recordAudit` for the audit log. New routes use them.

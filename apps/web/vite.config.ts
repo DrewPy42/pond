@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   plugins: [vue(), vuetify()],
-  server: { host: true, port: 5173, proxy: { '/api': 'http://localhost:3210' } },
+  server: {
+    host: true,
+    port: 5173,
+    proxy: { '/api': process.env.POND_API_URL ?? 'http://localhost:3210' },
+  },
   test: { environment: 'happy-dom', server: { deps: { inline: ['vuetify'] } } },
 })

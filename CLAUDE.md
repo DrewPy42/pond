@@ -12,6 +12,7 @@ Read these before you change anything substantial:
 | `docs/security.md` | Threat model and the required defenses |
 | `docs/backup-restore.md` | Backup format, encryption, destinations, restore |
 | `docs/scope-v1.md` | What is in v1, what is not, milestone order |
+| `docs/testing.md` | What we test, how, and the test-writing convention |
 | `docs/decisions.md` | Decision log: why things are the way they are |
 
 ## Hard rules
@@ -23,9 +24,10 @@ Read these before you change anything substantial:
 5. **Permissions go through one place.** Every API route resolves the acting user and Space through the shared auth middleware and checks Space membership and role. Deny by default. Never add a route that skips it.
 6. **LilyPads never touch core tables.** They use the core API through `ctx`. They may only query their own `lp_<padId>_*` tables directly.
 7. **Secrets are encrypted at rest** with the core crypto module (`server/src/crypto`). This covers SimpleFIN access URLs, AI keys, TOTP secrets, SSNs and EINs. Never log them, never return them in API responses unless it is an explicit, re-authenticated reveal, and never write them to the audit log.
-8. **Validate all input with zod** at the route boundary. Queries go through Drizzle; no string-built SQL.
+8. **Validate all input with zod** at the route boundary. Queries go through Drizzle, inside the repositories in `apps/server/src/repos`; routes and services use the repository interfaces, never Drizzle directly. No string-built SQL.
 9. **Migrations are forward-only** and must run on a database restored from an older backup.
 10. **Ask before adding a dependency.** Prefer what's already in the stack. Anything native must build on linux/arm64.
+11. **Tests ship with the change.** No feature is done without tests (`docs/testing.md`). Each test states the function under test, its inputs, and the expected outcome in a short comment, so a human can follow it. Functionality tests use mock data and fake repositories, not the database; only repository-contract and migration tests touch SQLite. A schema change also needs a migration fixture and test.
 
 ## Stack
 

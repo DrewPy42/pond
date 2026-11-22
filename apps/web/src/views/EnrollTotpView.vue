@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, errorMessage } from '../api'
+import { QrCode } from '../components/common'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -48,12 +49,16 @@ async function confirm() {
   <template v-if="!recovery">
     <h1 class="text-h5 mb-1">Turn on two-step sign-in</h1>
     <p class="text-medium-emphasis mb-4">
-      Add this key to an authenticator app (1Password, Authy, Google Authenticator, ...), then enter
-      the 6-digit code it shows. Administrators must do this.
+      Scan this QR code with an authenticator app (1Password, Authy, Google Authenticator, ...),
+      then enter the 6-digit code it shows. Administrators must do this.
     </p>
     <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{
       error
     }}</v-alert>
+    <div v-if="uri" class="d-flex justify-center mb-4">
+      <QrCode :value="uri" :size="200" label="QR code for your authenticator app" />
+    </div>
+    <p class="text-body-2 text-medium-emphasis mb-2">Can't scan? Enter this key instead:</p>
     <v-text-field :model-value="secret" label="Secret key" readonly data-testid="totp-secret" />
     <p class="mb-4"><a :href="uri">Open in authenticator app</a></p>
     <v-form @submit.prevent="confirm">

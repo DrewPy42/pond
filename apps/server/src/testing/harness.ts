@@ -2,13 +2,13 @@ import { randomBytes } from 'node:crypto'
 import type { Express } from 'express'
 import { generateSync } from 'otplib'
 import request from 'supertest'
-import { createApp } from './app.js'
-import { LoginLimiter } from './auth/ratelimit.js'
-import { SetupCode } from './auth/setupCode.js'
-import type { AppContext } from './context.js'
-import { createCrypto } from './crypto/index.js'
-import { openDb, runMigrations } from './db/index.js'
-import { createLogger } from './logger.js'
+import { createApp } from '../app.js'
+import { LoginLimiter } from '../auth/ratelimit.js'
+import { SetupCode } from '../auth/setupCode.js'
+import type { AppContext } from '../context.js'
+import { createCrypto } from '../crypto/index.js'
+import { createLogger } from '../logger.js'
+import { createFakeRepos } from './fakeRepos.js'
 
 export const PASSWORD = 'correct-horse-battery-1'
 
@@ -19,19 +19,23 @@ export interface TestEnv {
   advance(ms: number): void
 }
 
+/**
+ * A complete app wired to in-memory fake repositories (no database), a fixed clock you can
+ * advance, predictable ids (`id-1`, `id-2`, ...) and a random throwaway crypto key.
+ */
 export function makeEnv(opts: { withSetupCode?: boolean } = {}): TestEnv {
-  const db = openDb(':memory:')
-  runMigrations(db)
   let t = Date.parse('2026-01-01T12:00:00Z')
   const clock = () => t
+  let idCounter = 0
   const ctx: AppContext = {
-    db,
+    repos: createFakeRepos(() => new Date(t)),
     crypto: createCrypto(randomBytes(32)),
     log: createLogger('silent'),
     setupCode: new SetupCode(opts.withSetupCode ?? true),
     limiter: new LoginLimiter({ clock }),
     cookieSecure: false,
     now: () => new Date(t),
+    newId: () => `id-${++idCounter}`,
     spaceRoutes: [],
   }
   return { ctx, app: createApp(ctx), advance: (ms) => void (t += ms) }

@@ -17,6 +17,34 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Data access lives only in repos/ and db/. Routes, middleware and services use repository
+    // interfaces so tests can run on fakes (docs/testing.md, CLAUDE.md rule 11).
+    files: [
+      'apps/server/src/routes/**/*.ts',
+      'apps/server/src/middleware/**/*.ts',
+      'apps/server/src/auth/**/*.ts',
+      'apps/server/src/audit.ts',
+      'apps/server/src/app.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['drizzle-orm', 'drizzle-orm/*', 'better-sqlite3'],
+              message: 'Use a repository (src/repos), not the database library.',
+            },
+            {
+              group: ['**/db/schema*', '**/db/index*'],
+              message: 'Use a repository (src/repos), not the database layer.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/web/**/*.{ts,vue}'],
     languageOptions: { globals: globals.browser },
   },
