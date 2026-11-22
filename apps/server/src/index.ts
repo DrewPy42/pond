@@ -5,6 +5,7 @@ import { loadConfig } from './config.js'
 import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
 import { openDb, runMigrations } from './db/index.js'
 import { newId } from './db/ids.js'
+import { seedMissingCategories } from './ledger/service.js'
 import { createLogger } from './logger.js'
 import { createDrizzleRepos } from './repos/drizzle.js'
 
@@ -16,6 +17,7 @@ const db = openDb(config.dbPath)
 runMigrations(db)
 
 const repos = createDrizzleRepos(db)
+seedMissingCategories({ repos, newId, now: () => new Date() }) // Spaces from before categories existed
 const setupCode = new SetupCode(repos.users.count() === 0)
 if (setupCode.active) {
   // Printed to the console on purpose: physical access to the server is the trust anchor.

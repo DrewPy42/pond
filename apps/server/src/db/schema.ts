@@ -139,3 +139,156 @@ export const auditLog = sqliteTable(
   },
   (t) => [index('audit_log_at_idx').on(t.at), index('audit_log_action_idx').on(t.action)],
 )
+
+// ---------- Ledger (M2) ----------
+// Money columns are signed INTEGER cents; positive = money into the account (CLAUDE.md rule 2).
+// `connection_id` / `import_batch_id` arrive with SimpleFIN (M3) and CSV import (M4) as
+// ADD COLUMN migrations, because those parent tables don't exist yet.
+
+export const accounts = sqliteTable(
+  'accounts',
+  {
+    id: text('id').primaryKey(),
+    externalId: text('external_id'),
+    institutionName: text('institution_name'),
+    name: text('name').notNull(),
+    nickname: text('nickname'),
+    type: text('type', {
+      enum: [
+        'checking',
+        'savings',
+        'credit_card',
+        'loan',
+        'brokerage',
+        'retirement',
+        'cash',
+        'property',
+        'other',
+      ],
+    }).notNull(),
+    currency: text('currency').notNull().default('USD'),
+    primarySpaceId: text('primary_space_id').references(() => spaces.id),
+    isManual: integer('is_manual', { mode: 'boolean' }).notNull().default(true),
+    includeInNetWorth: integer('include_in_net_worth', { mode: 'boolean' }).notNull().default(true),
+    syncEnabled: integer('sync_enabled', { mode: 'boolean' }).notNull().default(false),
+    hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
+    lastFour: text('last_four'),
+    archivedAt: text('archived_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('accounts_space_idx').on(t.primarySpaceId)],
+)
+
+export const balanceSnapshots = sqliteTable(
+  'balance_snapshots',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    /** Calendar day, YYYY-MM-DD. */
+    date: text('date').notNull(),
+    balanceCents: integer('balance_cents').notNull(),
+    availableCents: integer('available_cents'),
+    source: text('source', { enum: ['sync', 'manual'] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('balance_snapshots_account_date_unique').on(t.accountId, t.date)],
+)
+
+export const categories = sqliteTable(
+  'categories',
+  {
+    id: text('id').primaryKey(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    parentId: text('parent_id'),
+    name: text('name').notNull(),
+    kind: text('kind', { enum: ['income', 'expense', 'transfer'] }).notNull(),
+    taxLine: text('tax_line'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    archivedAt: text('archived_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('categories_space_idx').on(t.spaceId)],
+)
+
+export const transactions = sqliteTable(
+  'transactions',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    /** The bank's own id (SimpleFIN) for de-duplication; null for manual entries. */
+    externalId: text('external_id'),
+    source: text('source', { enum: ['simplefin', 'manual', 'csv'] }).notNull(),
+    /** Calendar day, YYYY-MM-DD. */
+    date: text('date').notNull(),
+    postedAt: text('posted_at'),
+    transactedAt: text('transacted_at'),
+    amountCents: integer('amount_cents').notNull(),
+    descriptionRaw: text('description_raw').notNull(),
+    payee: text('payee'),
+    memo: text('memo'),
+    pending: integer('pending', { mode: 'boolean' }).notNull().default(false),
+    status: text('status', { enum: ['active', 'removed'] })
+      .notNull()
+      .default('active'),
+    /** Cross-Space privacy (data-model.md): hides account name, total and other splits. */
+    private: integer('private', { mode: 'boolean' }).notNull().default(false),
+    needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('transactions_account_date_idx').on(t.accountId, t.date),
+    uniqueIndex('transactions_account_external_unique')
+      .on(t.accountId, t.externalId)
+      .where(sql`${t.externalId} is not null`),
+  ],
+)
+
+export const splits = sqliteTable(
+  'splits',
+  {
+    id: text('id').primaryKey(),
+    transactionId: text('transaction_id')
+      .notNull()
+      .references(() => transactions.id),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    categoryId: text('category_id').references(() => categories.id),
+    amountCents: integer('amount_cents').notNull(),
+    memo: text('memo'),
+    reimbursable: integer('reimbursable', { mode: 'boolean' }).notNull().default(false),
+    reimbursedAt: text('reimbursed_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('splits_txn_idx').on(t.transactionId), index('splits_space_idx').on(t.spaceId)],
+)
+
+export const transferLinks = sqliteTable(
+  'transfer_links',
+  {
+    id: text('id').primaryKey(),
+    fromTransactionId: text('from_transaction_id')
+      .notNull()
+      .references(() => transactions.id),
+    toTransactionId: text('to_transaction_id')
+      .notNull()
+      .references(() => transactions.id),
+    createdBy: text('created_by', { enum: ['user', 'rule', 'auto'] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // A transaction can be on at most one side of one link.
+    uniqueIndex('transfer_links_from_unique').on(t.fromTransactionId),
+    uniqueIndex('transfer_links_to_unique').on(t.toTransactionId),
+  ],
+)

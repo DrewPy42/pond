@@ -59,8 +59,12 @@ async function world(): Promise<World> {
   return { env, admin, owner, editor, viewer, outsider, loner, a, b }
 }
 
+/** Fills the route's params: the Space, erin's id for :userId, and a made-up id for the rest. */
 const fill = (path: string, w: World, spaceId: string) =>
-  path.replace(':spaceId', spaceId).replace(':userId', w.loner.id)
+  path
+    .replace(':spaceId', spaceId)
+    .replace(':userId', w.loner.id)
+    .replace(/:[A-Za-z]+/g, '2030-01-01')
 
 const bodyFor = (method: string) =>
   method === 'put' ? { role: 'viewer' } : method === 'patch' ? { name: 'Renamed' } : {}
@@ -118,8 +122,8 @@ describe('every Space-scoped route (auto-discovered from createSpaceRouter)', ()
   /**
    * Function: requireSpace(repos, minRole) role check on every Space-scoped route
    * Inputs:   "carol" (viewer) and "bob" (editor) calling every route in Space A
-   * Expected: 403 where the route needs a higher role than theirs; never 403/404 where their
-   *           role is enough
+   * Expected: 403 where the route needs a higher role than theirs; never 403 where their role is
+   *           enough (a 404 there can be legitimate, e.g. a made-up account id, so it is allowed)
    */
   it('enforces the declared minimum role', async () => {
     const w = await world()
@@ -132,7 +136,7 @@ describe('every Space-scoped route (auto-discovered from createSpaceRouter)', ()
         const res = await who.client.send(r.method, fill(r.path, w, w.a), bodyFor(r.method))
         const label = `${role} ${r.method.toUpperCase()} ${r.path} (needs ${r.minRole})`
         if (rank[role] < rank[r.minRole]) expect(res.status, label).toBe(403)
-        else expect([403, 404], label).not.toContain(res.status)
+        else expect(res.status, label).not.toBe(403)
       }
     }
   })

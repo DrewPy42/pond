@@ -51,6 +51,12 @@ export type UserPatch = Partial<
 export class DuplicateError extends Error {}
 /** Thrown when a row refers to a parent that doesn't exist (foreign key). */
 export class MissingParentError extends Error {}
+/** Thrown when a write would break "splits sum exactly to the transaction amount". */
+export class SplitInvariantError extends Error {
+  constructor(public problem: 'no_splits' | 'not_integer' | 'sum_mismatch') {
+    super(problem)
+  }
+}
 
 export interface UserRepo {
   count(): number
@@ -151,12 +157,239 @@ export interface AuditRepo {
   list(opts: { limit: number; before?: string }): AuditRecord[]
 }
 
+// ---------- Ledger (M2) ----------
+
+export type AccountType =
+  | 'checking'
+  | 'savings'
+  | 'credit_card'
+  | 'loan'
+  | 'brokerage'
+  | 'retirement'
+  | 'cash'
+  | 'property'
+  | 'other'
+
+export interface AccountRecord {
+  id: string
+  externalId: string | null
+  institutionName: string | null
+  name: string
+  nickname: string | null
+  type: AccountType
+  currency: string
+  primarySpaceId: string | null
+  isManual: boolean
+  includeInNetWorth: boolean
+  syncEnabled: boolean
+  hidden: boolean
+  lastFour: string | null
+  archivedAt: string | null
+}
+export type NewAccount = Pick<AccountRecord, 'id' | 'name' | 'type' | 'currency'> &
+  Partial<
+    Pick<
+      AccountRecord,
+      | 'institutionName'
+      | 'nickname'
+      | 'primarySpaceId'
+      | 'isManual'
+      | 'includeInNetWorth'
+      | 'lastFour'
+      | 'hidden'
+    >
+  >
+export type AccountPatch = Partial<
+  Pick<
+    AccountRecord,
+    | 'name'
+    | 'nickname'
+    | 'institutionName'
+    | 'type'
+    | 'includeInNetWorth'
+    | 'hidden'
+    | 'lastFour'
+    | 'archivedAt'
+  >
+>
+export interface AccountRepo {
+  create(account: NewAccount): void
+  findById(id: string): AccountRecord | undefined
+  /** Accounts whose primary Space is `spaceId`, ordered by name. Archived ones only on request. */
+  listForSpace(spaceId: string, opts?: { includeArchived?: boolean }): AccountRecord[]
+  update(id: string, patch: AccountPatch): void
+}
+
+export interface BalanceSnapshotRecord {
+  id: string
+  accountId: string
+  date: string
+  balanceCents: number
+  availableCents: number | null
+  source: 'sync' | 'manual'
+}
+export interface BalanceRepo {
+  /** One snapshot per account per day: inserts, or replaces the amounts for that day. */
+  upsert(
+    s: Omit<BalanceSnapshotRecord, 'availableCents'> & { availableCents?: number | null },
+  ): void
+  /** Newest first. */
+  listForAccount(accountId: string, opts?: { limit?: number }): BalanceSnapshotRecord[]
+  /** The most recent snapshot for each given account (accounts with none are omitted). */
+  latestForAccounts(accountIds: string[]): BalanceSnapshotRecord[]
+}
+
+export interface CategoryRecord {
+  id: string
+  spaceId: string
+  parentId: string | null
+  name: string
+  kind: 'income' | 'expense' | 'transfer'
+  taxLine: string | null
+  sortOrder: number
+  archivedAt: string | null
+}
+export type NewCategory = Pick<CategoryRecord, 'id' | 'spaceId' | 'name' | 'kind'> &
+  Partial<Pick<CategoryRecord, 'parentId' | 'taxLine' | 'sortOrder'>>
+export interface CategoryRepo {
+  create(category: NewCategory): void
+  findById(id: string): CategoryRecord | undefined
+  /** Ordered by kind (income, expense, transfer), then sortOrder, then name. */
+  listForSpace(spaceId: string, opts?: { includeArchived?: boolean }): CategoryRecord[]
+  update(
+    id: string,
+    patch: Partial<
+      Pick<CategoryRecord, 'name' | 'kind' | 'taxLine' | 'sortOrder' | 'parentId' | 'archivedAt'>
+    >,
+  ): void
+}
+
+export interface TransactionRecord {
+  id: string
+  accountId: string
+  externalId: string | null
+  source: 'simplefin' | 'manual' | 'csv'
+  date: string
+  postedAt: string | null
+  transactedAt: string | null
+  amountCents: number
+  descriptionRaw: string
+  payee: string | null
+  memo: string | null
+  pending: boolean
+  status: 'active' | 'removed'
+  private: boolean
+  needsReview: boolean
+}
+export type NewTransaction = Pick<
+  TransactionRecord,
+  'id' | 'accountId' | 'source' | 'date' | 'amountCents' | 'descriptionRaw'
+> &
+  Partial<
+    Pick<
+      TransactionRecord,
+      | 'externalId'
+      | 'postedAt'
+      | 'transactedAt'
+      | 'payee'
+      | 'memo'
+      | 'pending'
+      | 'private'
+      | 'needsReview'
+    >
+  >
+export type TransactionPatch = Partial<
+  Pick<
+    TransactionRecord,
+    | 'date'
+    | 'amountCents'
+    | 'descriptionRaw'
+    | 'payee'
+    | 'memo'
+    | 'pending'
+    | 'private'
+    | 'needsReview'
+    | 'status'
+  >
+>
+
+export interface SplitRecord {
+  id: string
+  transactionId: string
+  spaceId: string
+  categoryId: string | null
+  amountCents: number
+  memo: string | null
+  reimbursable: boolean
+  reimbursedAt: string | null
+}
+export type NewSplit = Pick<SplitRecord, 'id' | 'spaceId' | 'amountCents'> &
+  Partial<Pick<SplitRecord, 'categoryId' | 'memo' | 'reimbursable'>>
+
+export interface TransactionWithSplits {
+  txn: TransactionRecord
+  splits: SplitRecord[]
+  account: Pick<AccountRecord, 'id' | 'name' | 'primarySpaceId' | 'currency'>
+}
+export interface TransactionFilters {
+  accountId?: string
+  categoryId?: string
+  /** Inclusive calendar days, YYYY-MM-DD. */
+  from?: string
+  to?: string
+  /** Case-insensitive text match on description, payee and memo. */
+  q?: string
+}
+export interface TransactionRepo {
+  /**
+   * Stores a transaction and its splits together. Throws SplitInvariantError unless there is at
+   * least one split and the splits sum exactly to the amount; DuplicateError for a repeated
+   * (account, externalId); MissingParentError for an unknown account, Space or category.
+   */
+  create(txn: NewTransaction, splits: NewSplit[]): void
+  findById(id: string): TransactionWithSplits | undefined
+  /**
+   * Applies `patch`. When the amount changes or `splits` is given, the final splits must still
+   * balance (SplitInvariantError otherwise) and `splits`, if given, replace the old ones.
+   */
+  update(id: string, patch: TransactionPatch, splits?: NewSplit[]): void
+  /**
+   * Active transactions visible to a Space: those on its accounts, plus those with a split in
+   * it. Newest first (date, then id, descending), with the total before paging.
+   */
+  listForSpace(
+    spaceId: string,
+    filters: TransactionFilters,
+    page: { limit: number; offset: number },
+  ): { rows: TransactionWithSplits[]; total: number }
+  /** Ids of active transactions whose splits don't balance (should always be empty). */
+  findInvariantViolations(): string[]
+}
+
+export interface TransferLinkRecord {
+  id: string
+  fromTransactionId: string
+  toTransactionId: string
+  createdBy: 'user' | 'rule' | 'auto'
+}
+export interface TransferRepo {
+  /** Throws DuplicateError if either transaction is already linked. */
+  create(link: TransferLinkRecord): void
+  findByTransaction(transactionId: string): TransferLinkRecord | undefined
+  delete(id: string): void
+}
+
 export interface Repos {
   users: UserRepo
   recoveryCodes: RecoveryCodeRepo
   sessions: SessionRepo
   spaces: SpaceRepo
   audit: AuditRepo
+  accounts: AccountRepo
+  balances: BalanceRepo
+  categories: CategoryRepo
+  transactions: TransactionRepo
+  transfers: TransferRepo
   system: { schemaVersion(): number }
   /** Several writes as one unit. Real: a SQLite transaction (rolls back if `fn` throws). */
   transaction<T>(fn: () => T): T

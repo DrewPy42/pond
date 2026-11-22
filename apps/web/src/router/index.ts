@@ -20,6 +20,12 @@ export const coreNav = [
     title: 'Transactions',
     icon: 'mdi-swap-horizontal',
   },
+  {
+    path: '/categories',
+    name: 'categories',
+    title: 'Categories',
+    icon: 'mdi-tag-multiple-outline',
+  },
   { path: '/reports', name: 'reports', title: 'Reports', icon: 'mdi-chart-box-outline' },
   { path: '/settings', name: 'settings', title: 'Settings', icon: 'mdi-cog-outline' },
 ] as const
@@ -28,8 +34,19 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
+    { path: '/accounts', name: 'accounts', component: () => import('../views/AccountsView.vue') },
+    {
+      path: '/transactions',
+      name: 'transactions',
+      component: () => import('../views/TransactionsView.vue'),
+    },
+    {
+      path: '/categories',
+      name: 'categories',
+      component: () => import('../views/CategoriesView.vue'),
+    },
     ...coreNav
-      .filter((n) => n.path !== '/')
+      .filter((n) => !['/', '/accounts', '/transactions', '/categories'].includes(n.path))
       .map((n) => ({
         path: n.path,
         name: n.name,

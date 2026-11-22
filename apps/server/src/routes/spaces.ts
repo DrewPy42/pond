@@ -4,7 +4,9 @@ import { recordAudit } from '../audit.js'
 import type { AppContext } from '../context.js'
 import { sendError, validateBody } from '../http.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
+import { seedCategories } from '../ledger/service.js'
 import { createSpaceRouter } from '../middleware/spaceRouter.js'
+import { registerLedgerRoutes } from './ledger.js'
 import { MissingParentError, type SpaceRecord } from '../repos/types.js'
 
 const spaceView = (s: SpaceRecord, role: string) => ({
@@ -54,6 +56,7 @@ export function spacesRouter(ctx: AppContext): Router {
     const id = ctx.newId()
     repos.transaction(() => {
       repos.spaces.create({ id, name: b.name, type: b.type, currency: b.currency })
+      seedCategories({ repos, newId: ctx.newId, now: ctx.now }, id, b.type)
       if (b.ownerUserId) repos.spaces.setMember(id, b.ownerUserId, 'owner')
     })
     audit({
@@ -139,6 +142,8 @@ export function spacesRouter(ctx: AppContext): Router {
     })
     res.json({ ok: true })
   })
+
+  registerLedgerRoutes(ctx, sp)
 
   root.use('/:spaceId', sp.router)
   return root

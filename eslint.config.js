@@ -53,6 +53,8 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       // Rule 7/8: no `v-html` on user data; no string-built SQL is enforced in review + tests.
       'vue/no-v-html': 'error',
+      // Vuetify's table slots are written #item.<key>.
+      'vue/valid-v-slot': ['error', { allowModifiers: true }],
       'vue/multi-word-component-names': 'off',
       // Formatting belongs to Prettier.
       'vue/max-attributes-per-line': 'off',

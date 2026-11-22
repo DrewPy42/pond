@@ -31,6 +31,8 @@
 - unique (`connection_id`, `external_id`)
 - Manual accounts work exactly like synced ones, minus sync.
 
+> **Built in M2:** `accounts`, `balance_snapshots`, `transactions`, `splits`, `categories`, `transfer_links`. Two columns arrive with the milestones that need their parent tables, as `ADD COLUMN` migrations: `accounts.connection_id` (+ the `(connection_id, external_id)` unique index) in M3, and `transactions.import_batch_id` in M4. `transfer_links` is unique on `from_transaction_id` and on `to_transaction_id`, so a transaction is on at most one side of one link.
+
 **balance_snapshots**: `id`, `account_id`, `date`, `balance_cents`, `available_cents?`, `source` (sync | manual)
 - unique (`account_id`, `date`)
 - SimpleFIN only reports current balances, so this table is the only source of balance history.
