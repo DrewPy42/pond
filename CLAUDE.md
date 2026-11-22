@@ -12,6 +12,7 @@ Read these before you change anything substantial:
 | `docs/security.md` | Threat model and the required defenses |
 | `docs/backup-restore.md` | Backup format, encryption, destinations, restore |
 | `docs/scope-v1.md` | What is in v1, what is not, milestone order |
+| `docs/testing.md` | What we test, how, and the test-writing convention |
 | `docs/decisions.md` | Decision log: why things are the way they are |
 
 ## Hard rules
@@ -26,6 +27,7 @@ Read these before you change anything substantial:
 8. **Validate all input with zod** at the route boundary. Queries go through Drizzle; no string-built SQL.
 9. **Migrations are forward-only** and must run on a database restored from an older backup.
 10. **Ask before adding a dependency.** Prefer what's already in the stack. Anything native must build on linux/arm64.
+11. **Tests ship with the change.** No feature is done without tests (`docs/testing.md`). Each test states the function under test, its inputs, and the expected outcome in a short comment, so a human can follow it. A schema change also needs a migration fixture and test.
 
 ## Stack
 
