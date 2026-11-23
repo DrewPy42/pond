@@ -21,6 +21,10 @@ _Owner ideas to add here:_ (none recorded yet)
 
 Splits already have `reimbursable` and `reimbursed_at`, and rules can mark a split reimbursable, but no screen uses them. Deferred on purpose: the owner wants to understand the need better before designing it. Questions to answer first: who owes the money (an employer, a person, an insurer)? How is repayment recorded (matched to an incoming transaction, or marked by hand)? Should it affect reports (net of reimbursement)? Does it belong in core or a LilyPad?
 
+## CRM (a LilyPad)
+
+Requested by the primary user. Contacts, companies, notes and follow-ups, mainly for the business Space. It needs no financial permissions at all (see "Pads that aren't about money" in `lilypad-host-design.md`), so it is a good second pad to prove the platform handles non-financial pads. Needs `ctx.files` for attachments (M6) and likely field encryption for personal details. To refine with the requester before building.
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.
