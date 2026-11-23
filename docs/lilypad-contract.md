@@ -8,6 +8,21 @@ A **LilyPad** is a plugin that adds pages, tables, reports and behavior on top o
 - No community LilyPads, no isolation runtime, no submission process, no LilyPad-to-LilyPad dependencies. These come later.
 - The API must still be designed so `ctx` can later be backed by a remote transport (an isolated process or container) **without changing LilyPad code**. That rules out handing LilyPads raw database handles to core tables, Express `req`/`res` internals beyond what the SDK wraps, or Node globals the core depends on.
 
+## Amendments (2026-11-22)
+
+The original contract was written before any code existed. These changes were agreed while designing the host (`lilypad-host-design.md`) and **win over the text below wherever they conflict**; the body will be rewritten when M5a implements them. Each says why, and none weakens security.
+
+| # | Change | Why |
+|---|---|---|
+| A1 | **Pad routes are Space-scoped**: `/api/spaces/:spaceId/lilypads/<id>/...`, declared through the same `createSpaceRouter` as core routes, each with a required minimum role and zod schemas. Replaces `/api/lilypads/<id>/...`. | Reuses the one auth and Space middleware (CLAUDE.md rule 5). Pad routes get 401, 404-for-non-members and role checks automatically, and the permission suite tests every pad route with no extra code. A pad also has to be enabled for the Space or the route is a 404. Strictly stronger than the original; pads never build URLs themselves (the SDK client does), so no pad code depends on the path. |
+| A2 | **`core` is scoped, not global**: each route handler and job receives a `core` object bound to one Space and one acting user. Its methods take no `spaceId`. Replaces the global `ctx.core`. | A pad cannot ask about a Space it wasn't called for. Permission checks live in one place. Calls stay plain JSON, so an isolated pad can use the same API later. |
+| A3 | **Structured schedules** (`daily`, `weekly`, `monthly` with a time) instead of cron strings, with catch-up after downtime and a per-Space run record. | No cron parser dependency; clearer for pad authors; a Pi that was off on the 1st still runs the monthly job. |
+| A4 | **Pad settings screens are generated** from `settings.schema.json`. | Pad authors write no settings UI; every pad's settings look and behave the same (simple by default). |
+| A5 | **Core write APIs are deferred**: `transactions:write`, `splits.set`, `categories:write` stay specified but are built when a pad needs them. v1 pads are read-only toward core. | Smaller surface to secure; neither v1 pad writes core data. Adding an operation later is non-breaking. |
+| A6 | **`splits.sum({ from, to, groupBy, kind })`** is added to the core API: integer-cent totals from splits, excluding transfers and removed transactions. **Every `ctx` call must take and return plain JSON data** (enforced by a test that round-trips each call). | One way to total money (also used by core Reports); keeps the door open to running pads in isolation. |
+| A7 | **Loading and install:** official pads are discovered from a build-time registry behind a `PadSource` interface (the contract's runtime `entry` loading arrives with third-party pads). Pads may be **optional**: shipped in the image but off until an **admin installs** them (reviewing permissions), after which **Space owners enable** them per Space. An update can ship new pads; they appear as available, never auto-enabled. | Simplest packaging for v1 while keeping the swap to runtime loading contained to one interface. Admin approval of permissions is preserved. |
+| A8 | **Pad data uses a table API, not a query builder**: `find`, `findOne`, `insert`, `insertMany`, `update`, `delete`, `count`, with simple filters, text search and `or` groups, declarative migrations, and automatic Space scoping. No raw SQL. Replaces `ctx.db(table)` as a query builder. | A pad can't name a core table or another Space's rows, queries are parameterized by construction, it is easy to fake for tests, and it is plain JSON so pads can be isolated later. Easy to extend (add operations), hard to take back (removing raw SQL), so we start small. Also enough for pads that never touch finances, such as a CRM. |
+
 ## Manifest (`lilypad.json`)
 
 ```json
