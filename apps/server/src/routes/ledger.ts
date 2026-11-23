@@ -1,4 +1,4 @@
-import type { Request, RequestHandler, Response } from 'express'
+import type { Request } from 'express'
 import {
   createAccountSchema,
   createCategorySchema,
@@ -15,7 +15,7 @@ import type { AppContext } from '../context.js'
 import { sendError, validateBody } from '../http.js'
 import * as ledger from '../ledger/service.js'
 import type { createSpaceRouter } from '../middleware/spaceRouter.js'
-import { DuplicateError, MissingParentError } from '../repos/types.js'
+import { domainHandler } from './handler.js'
 
 /**
  * Ledger routes, all Space-scoped: they are declared through the shared Space router, so each
@@ -31,19 +31,7 @@ export function registerLedgerRoutes(
   const space = (req: Request) => req.space!.id
   const param = (req: Request, name: string) => String(req.params[name])
 
-  /** Runs a handler, mapping domain errors to responses. */
-  const run =
-    (fn: (req: Request, res: Response) => void): RequestHandler =>
-    (req, res, next) => {
-      try {
-        fn(req, res)
-      } catch (e) {
-        if (e instanceof ledger.LedgerError) return sendError(res, e.status, e.code, e.extra)
-        if (e instanceof MissingParentError) return sendError(res, 400, 'unknown_reference')
-        if (e instanceof DuplicateError) return sendError(res, 409, 'duplicate')
-        next(e)
-      }
-    }
+  const run = domainHandler
 
   // ----- Accounts and balances -----
 

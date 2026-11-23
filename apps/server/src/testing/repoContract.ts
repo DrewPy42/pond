@@ -941,4 +941,163 @@ export function repoContract(label: string, make: () => Repos): void {
       expect(r.transactions.countForAccount('A2')).toBe(1)
     })
   })
+
+  describe(`${label}: RuleRepo`, () => {
+    const withUser = () => {
+      const r = ledgerWorld()
+      r.users.create(buildUser({ id: 'adm', username: 'adm', isAdmin: true }))
+      return r
+    }
+    const rule = (id: string, spaceId: string, priority: number, over = {}) => ({
+      id,
+      spaceId,
+      name: `Rule ${id}`,
+      priority,
+      enabled: true,
+      conditions: [
+        {
+          type: 'text' as const,
+          field: 'description' as const,
+          op: 'contains' as const,
+          value: 'market',
+        },
+      ],
+      actions: [{ type: 'set_payee' as const, payee: 'Market' }],
+      createdBy: 'adm',
+      ...over,
+    })
+
+    /**
+     * Function: rules.create, findById, listForSpace, update, delete
+     * Inputs:   rules r2 (priority 20), r1 (priority 10) and r3 (priority 10) in Space S1, and one
+     *           in S2; then change r1's name/enabled/conditions/actions; then delete r3
+     * Expected: listed by priority then id for S1 only; conditions and actions round-trip as
+     *           structured data; update changes only the given fields; delete removes the rule
+     */
+    it('stores rules per Space in priority order, with structured conditions and actions', () => {
+      const r = withUser()
+      r.rules.create(rule('r2', 'S1', 20))
+      r.rules.create(rule('r1', 'S1', 10))
+      r.rules.create(rule('r3', 'S1', 10))
+      r.rules.create(rule('rx', 'S2', 1))
+      expect(r.rules.listForSpace('S1').map((x) => x.id)).toEqual(['r1', 'r3', 'r2'])
+      expect(r.rules.findById('r1')).toMatchObject({
+        enabled: true,
+        createdBy: 'adm',
+        actions: [{ type: 'set_payee', payee: 'Market' }],
+      })
+      r.rules.update('r1', {
+        name: 'Renamed',
+        enabled: false,
+        conditions: [{ type: 'direction', direction: 'out' }],
+        actions: [{ type: 'mark_reimbursable' }],
+      })
+      expect(r.rules.findById('r1')).toMatchObject({
+        name: 'Renamed',
+        enabled: false,
+        priority: 10,
+        conditions: [{ type: 'direction', direction: 'out' }],
+        actions: [{ type: 'mark_reimbursable' }],
+      })
+      r.rules.delete('r3')
+      expect(r.rules.listForSpace('S1').map((x) => x.id)).toEqual(['r1', 'r2'])
+      expect(r.rules.findById('none')).toBeUndefined()
+    })
+
+    /**
+     * Function: rules.create(rule)
+     * Inputs:   a rule in an unknown Space; a rule by an unknown user
+     * Expected: MissingParentError both times
+     */
+    it('refuses a rule with an unknown Space or creator', () => {
+      const r = withUser()
+      expect(() => r.rules.create(rule('a', 'ghost', 1))).toThrow(MissingParentError)
+      expect(() => r.rules.create(rule('b', 'S1', 1, { createdBy: 'ghost' }))).toThrow(
+        MissingParentError,
+      )
+    })
+  })
+
+  describe(`${label}: ImportBatchRepo and transaction batch link`, () => {
+    /**
+     * Function: importBatches.create, findById, listForAccounts; transactions.create with importBatchId
+     * Inputs:   two batches on A1 and one on A2 by "adm"; a transaction created with batch b1
+     * Expected: found by id with their column map; listed newest first for the given accounts only;
+     *           the transaction keeps its importBatchId; an unknown account or user is refused
+     */
+    it('records import batches and links transactions to them', () => {
+      const r = ledgerWorld()
+      r.users.create(buildUser({ id: 'adm', username: 'adm', isAdmin: true }))
+      const batch = (id: string, accountId: string) => ({
+        id,
+        accountId,
+        filename: `${id}.csv`,
+        format: 'csv' as const,
+        columnMap: { date: 0 },
+        status: 'done' as const,
+        rowCount: 3,
+        createdBy: 'adm',
+      })
+      r.importBatches.create(batch('b1', 'A1'))
+      r.importBatches.create(batch('b2', 'A1'))
+      r.importBatches.create(batch('b3', 'A2'))
+      expect(r.importBatches.findById('b1')).toMatchObject({
+        filename: 'b1.csv',
+        rowCount: 3,
+        columnMap: { date: 0 },
+      })
+      expect(r.importBatches.listForAccounts(['A1']).map((b) => b.id)).toEqual(['b2', 'b1'])
+      expect(r.importBatches.listForAccounts([])).toEqual([])
+      expect(() => r.importBatches.create(batch('b4', 'ghost'))).toThrow(MissingParentError)
+      r.transactions.create(
+        buildTransaction({ id: 't1', accountId: 'A1', source: 'csv', importBatchId: 'b1' }),
+        [sp('s1', 'S1', -1000)],
+      )
+      expect(r.transactions.findById('t1')!.txn.importBatchId).toBe('b1')
+    })
+  })
+
+  describe(`${label}: TransactionRepo.findOppositeCandidates`, () => {
+    /**
+     * Function: transactions.findOppositeCandidates({ amountCents, excludeAccountId, currency, from, to })
+     * Inputs:   a -5000 on A1 wanting +5000 elsewhere; candidates: +5000 on A2 (Jan 12, ok), +5000
+     *           on A2 (Jan 30, too late), +4999 on A2, +5000 on A1 itself, a removed +5000, one
+     *           already linked in a transfer, and one on a EUR account
+     * Expected: only the Jan 12 transaction on A2 comes back
+     */
+    it('finds unlinked, active, same-currency opposite amounts on other accounts in range', () => {
+      const r = ledgerWorld()
+      r.accounts.create(
+        buildAccount({ id: 'A3', name: 'Euro', currency: 'EUR', primarySpaceId: 'S1' }),
+      )
+      const add = (id: string, accountId: string, date: string, amountCents: number) =>
+        r.transactions.create(buildTransaction({ id, accountId, date, amountCents }), [
+          sp(`${id}-s`, accountId === 'A2' ? 'S2' : 'S1', amountCents),
+        ])
+      add('out', 'A1', '2030-01-10', -5000)
+      add('good', 'A2', '2030-01-12', 5000)
+      add('late', 'A2', '2030-01-30', 5000)
+      add('off', 'A2', '2030-01-12', 4999)
+      add('same', 'A1', '2030-01-12', 5000)
+      add('gone', 'A2', '2030-01-12', 5000)
+      r.transactions.update('gone', { status: 'removed' })
+      add('linked', 'A2', '2030-01-12', 5000)
+      add('partner', 'A1', '2030-01-12', -5000)
+      r.transfers.create({
+        id: 'l1',
+        fromTransactionId: 'partner',
+        toTransactionId: 'linked',
+        createdBy: 'user',
+      })
+      add('euro', 'A3', '2030-01-12', 5000)
+      const found = r.transactions.findOppositeCandidates({
+        amountCents: 5000,
+        excludeAccountId: 'A1',
+        currency: 'USD',
+        from: '2030-01-05',
+        to: '2030-01-15',
+      })
+      expect(found.map((t) => t.txn.id)).toEqual(['good'])
+    })
+  })
 }

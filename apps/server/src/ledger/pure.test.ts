@@ -25,6 +25,7 @@ const txn = (over: Partial<TransactionRecord> = {}): TransactionRecord => ({
   needsReview: true,
   userEdited: false,
   supersededBy: null,
+  importBatchId: null,
   ...over,
 })
 const split = (

@@ -22,6 +22,8 @@ import {
   balanceSnapshots,
   categories,
   connections,
+  importBatches,
+  rules,
   recoveryCodes,
   sessions,
   spaceMembers,
@@ -40,6 +42,7 @@ import {
   type CategoryRecord,
   type NewSplit,
   type Repos,
+  type RuleRecord,
   type SplitRecord,
   type TransactionRecord,
   type TransactionWithSplits,
@@ -109,6 +112,7 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
     needsReview: r.needsReview,
     userEdited: r.userEdited,
     supersededBy: r.supersededBy,
+    importBatchId: r.importBatchId,
   })
   const toSplit = (r: typeof splitsTable.$inferSelect): SplitRecord => ({
     id: r.id,
@@ -119,6 +123,16 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
     memo: r.memo,
     reimbursable: r.reimbursable,
     reimbursedAt: r.reimbursedAt,
+  })
+  const toRule = (r: typeof rules.$inferSelect): RuleRecord => ({
+    id: r.id,
+    spaceId: r.spaceId,
+    name: r.name,
+    priority: r.priority,
+    enabled: r.enabled,
+    conditions: r.conditions as RuleRecord['conditions'],
+    actions: r.actions as RuleRecord['actions'],
+    createdBy: r.createdBy,
   })
   const splitsOf = (transactionId: string): SplitRecord[] =>
     db
@@ -379,6 +393,62 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
           })),
     },
 
+    rules: {
+      create: (r) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(rules)
+              .values({ ...r, createdAt: iso(), updatedAt: iso() })
+              .run(),
+        ),
+      findById: (id) => {
+        const r = db.select().from(rules).where(eq(rules.id, id)).get()
+        return r && toRule(r)
+      },
+      listForSpace: (spaceId) =>
+        db
+          .select()
+          .from(rules)
+          .where(eq(rules.spaceId, spaceId))
+          .orderBy(asc(rules.priority), asc(rules.id))
+          .all()
+          .map(toRule),
+      update: (id, patch) =>
+        void db
+          .update(rules)
+          .set({ ...patch, updatedAt: iso() })
+          .where(eq(rules.id, id))
+          .run(),
+      delete: (id) => void db.delete(rules).where(eq(rules.id, id)).run(),
+    },
+
+    importBatches: {
+      create: (b) =>
+        mapWrite(
+          () =>
+            void db
+              .insert(importBatches)
+              .values({ ...b, createdAt: iso() })
+              .run(),
+        ),
+      findById: (id) => {
+        const r = db.select().from(importBatches).where(eq(importBatches.id, id)).get()
+        return r && { ...r }
+      },
+      listForAccounts: (accountIds, opts) =>
+        accountIds.length === 0
+          ? []
+          : db
+              .select()
+              .from(importBatches)
+              .where(inArray(importBatches.accountId, accountIds))
+              .orderBy(desc(importBatches.createdAt), desc(importBatches.id))
+              .limit(opts?.limit ?? 50)
+              .all()
+              .map((r) => ({ ...r })),
+    },
+
     connections: {
       create: (c) =>
         mapWrite(
@@ -637,6 +707,7 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
                 private: t.private ?? false,
                 needsReview: t.needsReview ?? false,
                 userEdited: t.userEdited ?? false,
+                importBatchId: t.importBatchId ?? null,
                 createdAt: iso(),
                 updatedAt: iso(),
               })
@@ -817,6 +888,35 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
           .from(transactions)
           .where(eq(transactions.accountId, accountId))
           .get()?.n ?? 0,
+      findOppositeCandidates(q) {
+        const rows = db
+          .select({ t: transactions, a: accounts })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(
+            and(
+              eq(transactions.status, 'active'),
+              eq(transactions.amountCents, q.amountCents),
+              ne(transactions.accountId, q.excludeAccountId),
+              eq(accounts.currency, q.currency),
+              gte(transactions.date, q.from),
+              lte(transactions.date, q.to),
+              sql`not exists (select 1 from transfer_links l where l.from_transaction_id = ${transactions.id} or l.to_transaction_id = ${transactions.id})`,
+            ),
+          )
+          .orderBy(asc(transactions.date), asc(transactions.id))
+          .all()
+        return rows.map((r) => ({
+          txn: toTxn(r.t),
+          splits: splitsOf(r.t.id),
+          account: {
+            id: r.a.id,
+            name: r.a.name,
+            primarySpaceId: r.a.primarySpaceId,
+            currency: r.a.currency,
+          },
+        }))
+      },
       findInvariantViolations() {
         const rows = db
           .select({

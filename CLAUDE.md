@@ -60,6 +60,10 @@ deploy/            Dockerfile, compose file, Caddyfile
 
 The core is AGPL-3.0. `packages/sdk` and the LilyPad template are MIT. Don't copy code under incompatible licenses into the core.
 
+## Product principle: simple by default
+
+Pond must be simple for the person using it and flexible underneath. Many budgeting apps overwhelm people with options they can't judge the need for; Pond should not. Features work with no setup, use plain words, introduce few concepts, and add an option only when real use shows it's needed. If a feature adds complexity, leave it out of v1 and write it in `docs/future.md`. (Detail: `docs/personal-finance-pad.md`.)
+
 ## Working style
 
 - Small, reviewable changes, one milestone at a time (see `docs/scope-v1.md`).

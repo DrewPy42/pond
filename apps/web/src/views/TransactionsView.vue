@@ -3,6 +3,7 @@ import type { AccountView, CategoryView, FullTransactionView, TransactionView } 
 import { sumCents } from '@pond/shared'
 import { computed, onMounted, ref, watch } from 'vue'
 import { DataTable, MoneyAmount } from '../components/common'
+import ImportDialog from '../components/imports/ImportDialog.vue'
 import TransactionDialog from '../components/ledger/TransactionDialog.vue'
 import { useAction } from '../composables/useAction'
 import { useSpaceApi } from '../composables/useSpaceApi'
@@ -18,6 +19,7 @@ const page = ref(1)
 const perPage = 25
 const filters = ref({ accountId: null as string | null, q: '', from: '', to: '' })
 
+const importOpen = ref(false)
 const editing = ref<FullTransactionView | null>(null)
 const dialogOpen = ref(false)
 
@@ -119,6 +121,15 @@ async function saved() {
     <v-spacer />
     <v-btn
       v-if="space.canEdit.value"
+      variant="outlined"
+      prepend-icon="mdi-file-upload-outline"
+      :disabled="accounts.length === 0"
+      @click="importOpen = true"
+    >
+      Import CSV
+    </v-btn>
+    <v-btn
+      v-if="space.canEdit.value"
       color="primary"
       prepend-icon="mdi-plus"
       :disabled="accounts.length === 0"
@@ -207,6 +218,7 @@ async function saved() {
     </template>
   </DataTable>
 
+  <ImportDialog v-model="importOpen" :accounts="accounts" @imported="saved" />
   <TransactionDialog
     v-model="dialogOpen"
     :transaction="editing"

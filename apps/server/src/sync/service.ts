@@ -11,6 +11,7 @@ import type {
 } from '../repos/types.js'
 import type { SimpleFinAccount, SimpleFinClient } from '../simplefin/types.js'
 import { SimpleFinError } from '../simplefin/types.js'
+import { applyRulesToTransaction } from '../rules/service.js'
 import { epochToDate, planSync, toIncoming } from './plan.js'
 
 /**
@@ -249,6 +250,8 @@ export interface SyncSummary {
   removed: number
   carriedOver: number
   flagged: number
+  /** New transactions a rule changed (category, payee, Space, transfer link). */
+  ruled: number
   warnings: string[]
 }
 
@@ -262,6 +265,7 @@ const emptySummary = (): SyncSummary => ({
   removed: 0,
   carriedOver: 0,
   flagged: 0,
+  ruled: 0,
   warnings: [],
 })
 
@@ -320,6 +324,10 @@ function applyAccount(
       unlink(carryFrom)
       d.repos.transactions.update(carryFrom.txn.id, { status: 'removed', supersededBy: id })
       s.carriedOver++
+    } else if (applyRulesToTransaction(d, id).changed) {
+      // A brand-new bank transaction: let the Space's rules categorize it. (One that inherited a
+      // pending transaction's splits is already categorized by a person, so rules leave it.)
+      s.ruled++
     }
   }
   for (const u of plan.updates) {

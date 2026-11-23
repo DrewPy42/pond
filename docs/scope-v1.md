@@ -22,6 +22,8 @@
 ## Later (do not build in v1)
 
 - AI Assistant: per-account auto-categorizing, savings and growth insights (user's own API key)
+- Bills LilyPad: recurring-charge detection, upcoming bills, subscriptions (notes in `future.md`)
+- Reimbursables tracking (the data fields exist; no screens in v1)
 - Investments LilyPad (holdings); brokerage balances still sync and count toward net worth in v1
 - PDF statement import
 - Passkeys (need HTTPS on a real hostname)
@@ -57,5 +59,5 @@ Each milestone ends with working, tested software.
 ## Open items to settle during the build
 
 - The gloxV theme tokens and logo need to be pulled from `~/Sites/gloxV` (M0).
-- What exactly the Personal Finance pad includes beyond budgets and goals (before M5).
+- ~~What exactly the Personal Finance pad includes~~ Settled 2026-11-22: monthly category budgets, savings goals, dashboard widgets. See `personal-finance-pad.md`. Bills are a v2 LilyPad and reimbursables are v2 (`future.md`).
 - SimpleFIN's current request limits and history depth, checked against a real account (M3). The protocol page documents no limits; Pond is conservative (a 90-day first pull, 12-hour default interval, manual sync at most every 5 minutes) until this is confirmed with a real account.

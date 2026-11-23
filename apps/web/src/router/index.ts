@@ -26,6 +26,7 @@ export const coreNav = [
     title: 'Categories',
     icon: 'mdi-tag-multiple-outline',
   },
+  { path: '/rules', name: 'rules', title: 'Rules', icon: 'mdi-filter-cog-outline' },
   { path: '/reports', name: 'reports', title: 'Reports', icon: 'mdi-chart-box-outline' },
   { path: '/settings', name: 'settings', title: 'Settings', icon: 'mdi-cog-outline' },
 ] as const
@@ -45,10 +46,14 @@ const router = createRouter({
       name: 'categories',
       component: () => import('../views/CategoriesView.vue'),
     },
+    { path: '/rules', name: 'rules', component: () => import('../views/RulesView.vue') },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
     ...coreNav
       .filter(
-        (n) => !['/', '/accounts', '/transactions', '/categories', '/settings'].includes(n.path),
+        (n) =>
+          !['/', '/accounts', '/transactions', '/categories', '/rules', '/settings'].includes(
+            n.path,
+          ),
       )
       .map((n) => ({
         path: n.path,

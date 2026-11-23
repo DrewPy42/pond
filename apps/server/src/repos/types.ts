@@ -1,3 +1,4 @@
+import type { RuleAction, RuleCondition } from '@pond/shared'
 import type { Role } from '../types.js'
 
 /**
@@ -291,6 +292,7 @@ export interface TransactionRecord {
   needsReview: boolean
   userEdited: boolean
   supersededBy: string | null
+  importBatchId: string | null
 }
 export type NewTransaction = Pick<
   TransactionRecord,
@@ -308,6 +310,7 @@ export type NewTransaction = Pick<
       | 'private'
       | 'needsReview'
       | 'userEdited'
+      | 'importBatchId'
     >
   >
 export type TransactionPatch = Partial<
@@ -383,6 +386,17 @@ export interface TransactionRepo {
   /** Every transaction on the account dated on/after `fromDate` (YYYY-MM-DD), any status. */
   listForAccountSince(accountId: string, fromDate: string): TransactionWithSplits[]
   countForAccount(accountId: string): number
+  /**
+   * Active, unlinked transactions on OTHER accounts of the same currency whose amount is exactly
+   * `amountCents`, dated within [from, to]. Oldest first. Used to find the other half of a transfer.
+   */
+  findOppositeCandidates(q: {
+    amountCents: number
+    excludeAccountId: string
+    currency: string
+    from: string
+    to: string
+  }): TransactionWithSplits[]
   /** Ids of active transactions whose splits don't balance (should always be empty). */
   findInvariantViolations(): string[]
 }
@@ -426,6 +440,53 @@ export interface ConnectionRepo {
   ): void
 }
 
+// ---------- Rules and CSV import (M4) ----------
+
+export interface RuleRecord {
+  id: string
+  spaceId: string
+  name: string
+  priority: number
+  enabled: boolean
+  conditions: RuleCondition[]
+  actions: RuleAction[]
+  createdBy: string
+}
+export interface RuleRepo {
+  /** Throws MissingParentError for an unknown Space or user. */
+  create(rule: RuleRecord): void
+  findById(id: string): RuleRecord | undefined
+  /** Lowest priority number first, ties by id. */
+  listForSpace(spaceId: string): RuleRecord[]
+  update(
+    id: string,
+    patch: Partial<
+      Pick<RuleRecord, 'name' | 'priority' | 'enabled' | 'conditions' | 'actions' | 'createdBy'>
+    >,
+  ): void
+  delete(id: string): void
+}
+
+export interface ImportBatchRecord {
+  id: string
+  accountId: string
+  filename: string
+  format: 'csv'
+  columnMap: unknown
+  status: 'pending' | 'review' | 'done' | 'error'
+  /** How many transactions the import created. */
+  rowCount: number
+  createdBy: string
+  createdAt: string
+}
+export interface ImportBatchRepo {
+  /** Throws MissingParentError for an unknown account or user. */
+  create(batch: Omit<ImportBatchRecord, 'createdAt'>): void
+  findById(id: string): ImportBatchRecord | undefined
+  /** Batches for these accounts, newest first. */
+  listForAccounts(accountIds: string[], opts?: { limit?: number }): ImportBatchRecord[]
+}
+
 export interface Repos {
   users: UserRepo
   recoveryCodes: RecoveryCodeRepo
@@ -433,6 +494,8 @@ export interface Repos {
   spaces: SpaceRepo
   audit: AuditRepo
   connections: ConnectionRepo
+  rules: RuleRepo
+  importBatches: ImportBatchRepo
   accounts: AccountRepo
   balances: BalanceRepo
   categories: CategoryRepo

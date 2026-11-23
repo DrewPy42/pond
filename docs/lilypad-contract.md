@@ -102,5 +102,5 @@ Pad tables and pad versions are included in backups.
 
 ## Official LilyPads in v1
 
-- **Personal Finance:** budgets by category and simple savings goals for personal Spaces.
+- **Personal Finance:** simple monthly budgets by category, savings goals, and dashboard widgets for personal Spaces. Full scope in `personal-finance-pad.md`. Bills are planned as a separate LilyPad later (`future.md`).
 - **Business Manager:** business profile, Schedule C reports, people and salary records, and documents, ported from business_manager.
