@@ -6,7 +6,9 @@ import { sendError, validateBody } from '../http.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
 import { seedCategories } from '../ledger/service.js'
 import { createSpaceRouter } from '../middleware/spaceRouter.js'
+import { registerImportRoutes } from './imports.js'
 import { registerLedgerRoutes } from './ledger.js'
+import { registerRuleRoutes } from './rules.js'
 import { MissingParentError, type SpaceRecord } from '../repos/types.js'
 
 const spaceView = (s: SpaceRecord, role: string) => ({
@@ -144,6 +146,8 @@ export function spacesRouter(ctx: AppContext): Router {
   })
 
   registerLedgerRoutes(ctx, sp)
+  registerRuleRoutes(ctx, sp)
+  registerImportRoutes(ctx, sp)
 
   root.use('/:spaceId', sp.router)
   return root

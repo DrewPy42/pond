@@ -145,6 +145,57 @@ export const auditLog = sqliteTable(
 // `connection_id` / `import_batch_id` arrive with SimpleFIN (M3) and CSV import (M4) as
 // ADD COLUMN migrations, because those parent tables don't exist yet.
 
+// ---------- Rules and CSV import (M4) ----------
+
+export const rules = sqliteTable(
+  'rules',
+  {
+    id: text('id').primaryKey(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    name: text('name').notNull(),
+    /** Lower runs first. */
+    priority: integer('priority').notNull().default(100),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    /** JSON array of conditions, all of which must match. See packages/shared/src/rules.ts. */
+    conditions: text('conditions', { mode: 'json' }).notNull(),
+    /** JSON array of actions. */
+    actions: text('actions', { mode: 'json' }).notNull(),
+    /** Whose permissions limit "move to Space" and "link as transfer" when the rule runs. */
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('rules_space_idx').on(t.spaceId)],
+)
+
+export const importBatches = sqliteTable(
+  'import_batches',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    filename: text('filename').notNull(),
+    format: text('format', { enum: ['csv'] }).notNull(),
+    columnMap: text('column_map', { mode: 'json' }).notNull(),
+    /** v1 reviews in the browser before committing, so batches are stored once they are done. */
+    status: text('status', { enum: ['pending', 'review', 'done', 'error'] })
+      .notNull()
+      .default('done'),
+    /** How many transactions the import created. */
+    rowCount: integer('row_count').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index('import_batches_account_idx').on(t.accountId)],
+)
+
 // ---------- SimpleFIN connections (M3) ----------
 
 export const connections = sqliteTable('connections', {
@@ -274,6 +325,8 @@ export const transactions = sqliteTable(
     userEdited: integer('user_edited', { mode: 'boolean' }).notNull().default(false),
     /** For a pending transaction that the bank replaced with a posted one: that posted one's id. */
     supersededBy: text('superseded_by'),
+    /** Set for rows created by a CSV import. */
+    importBatchId: text('import_batch_id').references(() => importBatches.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

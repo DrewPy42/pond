@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LedgerError, createTransaction, updateTransaction } from '../ledger/service'
+import { createRule } from '../rules/service'
 import { SimpleFinError } from '../simplefin/types'
 import { noon, sfAccount, sfTxn } from '../testing/fakeSimpleFin'
 import { SPACE, TOKEN, makeSyncWorld } from '../testing/syncWorld'
@@ -775,5 +776,111 @@ describe('revokeConnection, listConnections and syncAll', () => {
     const failed = await syncAll(w.deps)
     expect(failed[a]).toMatchObject({ ok: false, error: 'down' })
     expect(failed[b]).toMatchObject({ ok: false })
+  })
+})
+
+describe('syncConnection: rules on new bank transactions (M4)', () => {
+  /**
+   * Function: syncConnection(...) with a Space rule
+   * Inputs:   a HOME rule "description contains COFFEE -> category Coffee, payee Cafe"; a sync bringing a
+   *           COFFEE SHOP purchase and an unrelated one
+   * Expected: the coffee transaction is categorized and gets the payee (ruled = 1); the other is untouched;
+   *           neither is marked as edited by a person
+   */
+  it("categorizes new transactions with the Space's rules", async () => {
+    const w = makeSyncWorld()
+    const id = await w.connect([checking([])])
+    const acct = w.assign(id, 'ACT-1', 'HOME')
+    w.repos.categories.create({
+      id: 'cat-coffee',
+      spaceId: SPACE.HOME,
+      name: 'Coffee',
+      kind: 'expense',
+    })
+    createRule(w.deps, w.admin, SPACE.HOME, {
+      name: 'Coffee',
+      priority: 1,
+      enabled: true,
+      conditions: [{ type: 'text', field: 'description', op: 'contains', value: 'coffee' }],
+      actions: [
+        { type: 'set_category', categoryId: 'cat-coffee' },
+        { type: 'set_payee', payee: 'Cafe' },
+      ],
+    })
+    w.bank.returns([
+      checking([
+        sfTxn({ id: 'T1', description: 'COFFEE SHOP #4' }),
+        sfTxn({ id: 'T2', description: 'HARDWARE', amountCents: -900 }),
+      ]),
+    ])
+    const s = await syncConnection(w.deps, id)
+    expect(s).toMatchObject({ inserted: 2, ruled: 1 })
+    const t1 = w.repos.transactions.findByExternalId(acct, 'T1')!
+    expect(t1.txn).toMatchObject({ payee: 'Cafe', userEdited: false })
+    expect(t1.splits[0]!.categoryId).toBe('cat-coffee')
+    expect(w.repos.transactions.findByExternalId(acct, 'T2')!.splits[0]!.categoryId).toBeNull()
+  })
+  /**
+   * Function: syncConnection(...) (rules do not override carried-over categories)
+   * Inputs:   a pending coffee the user categorized by hand as "Other"; the posted version arrives with a new
+   *           id, while a rule would say "Coffee"
+   * Expected: the posted transaction keeps the user's category (it inherited it), and the rule is not re-run on it
+   */
+  it("does not re-categorize a posted transaction that inherited a person's choice", async () => {
+    const w = makeSyncWorld()
+    const id = await w.connect([checking([])])
+    const acct = w.assign(id, 'ACT-1', 'HOME')
+    w.repos.categories.create({
+      id: 'cat-coffee',
+      spaceId: SPACE.HOME,
+      name: 'Coffee',
+      kind: 'expense',
+    })
+    w.repos.categories.create({
+      id: 'cat-other',
+      spaceId: SPACE.HOME,
+      name: 'Other',
+      kind: 'expense',
+    })
+    w.bank.returns([
+      checking([
+        sfTxn({
+          id: 'PEND',
+          pending: true,
+          postedEpoch: 0,
+          transactedEpoch: noon('2030-01-10'),
+          description: 'COFFEE SHOP',
+          amountCents: -500,
+        }),
+      ]),
+    ])
+    await syncConnection(w.deps, id)
+    const pendingId = w.repos.transactions.findByExternalId(acct, 'PEND')!.txn.id
+    updateTransaction(w.deps, w.admin, SPACE.HOME, pendingId, {
+      splits: [{ spaceId: SPACE.HOME, amountCents: -500, categoryId: 'cat-other' }],
+    })
+    createRule(w.deps, w.admin, SPACE.HOME, {
+      name: 'Coffee',
+      priority: 1,
+      enabled: true,
+      conditions: [{ type: 'text', field: 'description', op: 'contains', value: 'coffee' }],
+      actions: [{ type: 'set_category', categoryId: 'cat-coffee' }],
+    })
+    w.advance(2 * DAY)
+    w.bank.returns([
+      checking([
+        sfTxn({
+          id: 'POST',
+          description: 'COFFEE SHOP',
+          amountCents: -500,
+          postedEpoch: noon('2030-01-12'),
+        }),
+      ]),
+    ])
+    const s = await syncConnection(w.deps, id)
+    expect(s).toMatchObject({ carriedOver: 1, ruled: 0 })
+    expect(w.repos.transactions.findByExternalId(acct, 'POST')!.splits[0]!.categoryId).toBe(
+      'cat-other',
+    )
   })
 })

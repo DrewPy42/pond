@@ -19,6 +19,8 @@ export function createApp(ctx: AppContext): Express {
   // Caddy (a separate container on a private network) terminates TLS in front of us.
   app.set('trust proxy', 'uniquelocal')
   app.use(helmet())
+  // CSV uploads are sent as JSON text and can be several MB; everything else stays small.
+  app.use('/api/spaces/:spaceId/imports', express.json({ limit: '7mb' }))
   app.use(express.json({ limit: '1mb' }))
 
   // Unauthenticated by design: liveness only, no data.

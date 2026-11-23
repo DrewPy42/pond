@@ -7,6 +7,8 @@ import {
   type BalanceSnapshotRecord,
   type CategoryRecord,
   type ConnectionRecord,
+  type ImportBatchRecord,
+  type RuleRecord,
   type NewSplit,
   type SplitRecord,
   type TransactionRecord,
@@ -36,6 +38,8 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
   const members = new Map<string, Role>() // key: `${spaceId}|${userId}`
   const audit: AuditRecord[] = []
   const connections = new Map<string, ConnectionRecord>()
+  const ruleRows = new Map<string, RuleRecord>()
+  const batches = new Map<string, ImportBatchRecord>()
   const accounts = new Map<string, AccountRecord>()
   const balances = new Map<string, BalanceSnapshotRecord>()
   const categories = new Map<string, CategoryRecord>()
@@ -218,6 +222,46 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           .slice(0, limit),
     },
 
+    rules: {
+      create(r) {
+        if (!spaces.has(r.spaceId) || !users.has(r.createdBy))
+          throw new MissingParentError('unknown space or user')
+        ruleRows.set(r.id, { ...r })
+      },
+      findById: (id) => ruleRows.get(id),
+      listForSpace: (spaceId) =>
+        [...ruleRows.values()]
+          .filter((r) => r.spaceId === spaceId)
+          .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : 1)),
+      update(id, patch) {
+        const r = ruleRows.get(id)
+        if (r) ruleRows.set(id, { ...r, ...patch })
+      },
+      delete: (id) => void ruleRows.delete(id),
+    },
+
+    importBatches: {
+      create(b) {
+        if (!accounts.has(b.accountId) || !users.has(b.createdBy))
+          throw new MissingParentError('unknown account or user')
+        batches.set(b.id, { ...b, createdAt: iso() })
+      },
+      findById: (id) => batches.get(id),
+      listForAccounts: (accountIds, opts) =>
+        [...batches.values()]
+          .filter((b) => accountIds.includes(b.accountId))
+          .sort((a, b) =>
+            a.createdAt === b.createdAt
+              ? a.id < b.id
+                ? 1
+                : -1
+              : a.createdAt < b.createdAt
+                ? 1
+                : -1,
+          )
+          .slice(0, opts?.limit ?? 50),
+    },
+
     connections: {
       create(c) {
         if (!users.has(c.createdBy)) throw new MissingParentError('unknown user')
@@ -376,6 +420,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           needsReview: t.needsReview ?? false,
           userEdited: t.userEdited ?? false,
           supersededBy: null,
+          importBatchId: t.importBatchId ?? null,
         })
         putSplits(t.id, list)
       },
@@ -439,6 +484,25 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
           .map(withSplits),
       countForAccount: (accountId) =>
         [...txns.values()].filter((t) => t.accountId === accountId).length,
+      findOppositeCandidates: (q) =>
+        [...txns.values()]
+          .filter((t) => {
+            const acct = accounts.get(t.accountId)!
+            const linked = [...links.values()].some(
+              (l) => l.fromTransactionId === t.id || l.toTransactionId === t.id,
+            )
+            return (
+              t.status === 'active' &&
+              t.amountCents === q.amountCents &&
+              t.accountId !== q.excludeAccountId &&
+              acct.currency === q.currency &&
+              t.date >= q.from &&
+              t.date <= q.to &&
+              !linked
+            )
+          })
+          .sort((a, b) => (a.date === b.date ? (a.id < b.id ? -1 : 1) : a.date < b.date ? -1 : 1))
+          .map(withSplits),
       findInvariantViolations: () =>
         [...txns.values()]
           .filter(

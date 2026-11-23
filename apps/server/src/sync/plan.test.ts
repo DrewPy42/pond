@@ -39,6 +39,7 @@ const held = (
     needsReview: false,
     userEdited: false,
     supersededBy: null,
+    importBatchId: null,
     ...over,
   },
   splits: (splits ?? [{}]).map((s, i) => ({

@@ -53,6 +53,8 @@
 **transfer_links**: `id`, `from_transaction_id`, `to_transaction_id`, `created_by` (user | rule | auto)
 - Linked transactions count as transfers in reports, not as spending or income.
 
+> **Built in M4:** `rules` (with `created_by`, the person whose permissions limit "move to Space" and "link as transfer" when the rule runs, and structured JSON `conditions` / `actions` validated by `packages/shared/src/rules.ts`), `import_batches`, and `transactions.import_batch_id`. v1 reviews CSV rows in the browser before saving, so batches are written once, with status `done`; `pending` and `review` are reserved for a future stored-upload flow.
+
 **rules**: `id`, `space_id`, `name`, `priority`, `enabled`, `conditions` (JSON), `actions` (JSON)
 - Conditions: description/payee contains or matches, amount range, account, direction.
 - Actions: set payee, set category, move to Space, mark reimbursable, link as transfer.

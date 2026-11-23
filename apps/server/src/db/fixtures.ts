@@ -156,4 +156,45 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
         throw new Error('synced transaction changed')
     },
   },
+  {
+    version: 5,
+    description: 'M4: rules and CSV import (rules, import_batches, transactions.import_batch_id)',
+    seed(db) {
+      db.exec(`
+        INSERT INTO users (id, username, display_name, password_hash, is_admin, status)
+          VALUES ('u1', 'admin', 'Admin', '$argon2id$stub', 1, 'active');
+        INSERT INTO spaces (id, name, type, currency) VALUES ('s1', 'Home', 'personal', 'USD');
+        INSERT INTO accounts (id, name, type, currency, primary_space_id) VALUES ('acc1', 'Checking', 'checking', 'USD', 's1');
+        INSERT INTO categories (id, space_id, name, kind) VALUES ('cat1', 's1', 'Groceries', 'expense');
+        INSERT INTO rules (id, space_id, name, priority, enabled, conditions, actions, created_by)
+          VALUES ('r1', 's1', 'Market', 10, 1,
+                  '[{"type":"text","field":"description","op":"contains","value":"market"}]',
+                  '[{"type":"set_category","categoryId":"cat1"}]', 'u1');
+        INSERT INTO import_batches (id, account_id, filename, format, column_map, status, row_count, created_by)
+          VALUES ('b1', 'acc1', 'jan.csv', 'csv', '{"date":0,"description":1,"amount":2}', 'done', 1, 'u1');
+        INSERT INTO transactions (id, account_id, source, date, amount_cents, description_raw, import_batch_id)
+          VALUES ('t1', 'acc1', 'csv', '2030-01-04', -4200, 'CORNER MARKET', 'b1');
+        INSERT INTO splits (id, transaction_id, space_id, category_id, amount_cents)
+          VALUES ('sp1', 't1', 's1', 'cat1', -4200);
+      `)
+    },
+    verify(db) {
+      const r = one<{ priority: number; conditions: string; actions: string }>(
+        db,
+        "SELECT priority, conditions, actions FROM rules WHERE id = 'r1'",
+      )
+      if (r.priority !== 10 || !r.conditions.includes('market') || !r.actions.includes('cat1'))
+        throw new Error('rule changed')
+      const b = one<{ filename: string; row_count: number }>(
+        db,
+        "SELECT filename, row_count FROM import_batches WHERE id = 'b1'",
+      )
+      if (b.filename !== 'jan.csv' || b.row_count !== 1) throw new Error('import batch changed')
+      const t = one<{ import_batch_id: string }>(
+        db,
+        "SELECT import_batch_id FROM transactions WHERE id = 't1'",
+      )
+      if (t.import_batch_id !== 'b1') throw new Error('transaction lost its batch')
+    },
+  },
 ]
