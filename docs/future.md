@@ -25,6 +25,12 @@ Splits already have `reimbursable` and `reimbursed_at`, and rules can mark a spl
 
 Requested by the primary user. Contacts, companies, notes and follow-ups, mainly for the business Space. It needs no financial permissions at all (see "Pads that aren't about money" in `lilypad-host-design.md`), so it is a good second pad to prove the platform handles non-financial pads. Needs `ctx.files` for attachments (M6) and likely field encryption for personal details. To refine with the requester before building.
 
+## Personal Finance pad follow-ups
+- **Several goals sharing one account** (each gets a portion of the balance). v1 goals follow a whole account or hand-added money.
+- **Budgets on parent categories** that roll up their children.
+- **Edit a goal's name, target or date in the UI** (the route exists; v1 screens only create and delete).
+- **Pad UI helpers in the SDK** (money box, money amount, dialogs) so pads stop copying web components; also lets the pad follow the Space's currency instead of assuming USD.
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.

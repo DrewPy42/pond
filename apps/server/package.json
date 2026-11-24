@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@pond/lilypad-personal": "workspace:*",
     "@pond/lilypad-template": "workspace:*",
     "@pond/sdk": "workspace:*",
     "@pond/shared": "workspace:*",
