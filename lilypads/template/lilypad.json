@@ -1,0 +1,37 @@
+{
+  "id": "template",
+  "name": "Notes (example)",
+  "version": "1.0.0",
+  "author": "WibbitWorks",
+  "license": "MIT",
+  "description": "A tiny example pad: keep notes in a Space. Copy it to start your own LilyPad.",
+  "pondApi": "^1.0",
+  "spaceTypes": ["personal", "business"],
+  "permissions": ["transactions:read"],
+  "devOnly": true,
+  "settings": [
+    {
+      "key": "showDone",
+      "label": "Show finished notes",
+      "type": "boolean",
+      "default": true,
+      "scope": "space"
+    },
+    {
+      "key": "defaultTitle",
+      "label": "Title for new notes",
+      "type": "string",
+      "default": "New note",
+      "scope": "space"
+    },
+    {
+      "key": "retentionDays",
+      "label": "Delete finished notes after this many days",
+      "type": "integer",
+      "default": 90,
+      "min": 7,
+      "max": 3650,
+      "scope": "global"
+    }
+  ]
+}

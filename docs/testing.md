@@ -67,6 +67,10 @@ Good examples to copy: `packages/shared/src/money.test.ts` and `apps/server/src/
 - **Existing tests follow the same style.** The M1 server tests were converted to fake repositories and the Function / Inputs / Expected comments before M2 began; a new test that doesn't follow them is a review comment.
 - **Lint enforces the boundary.** ESLint forbids importing Drizzle, `better-sqlite3` or `db/` from routes, middleware, `auth/`, `audit.ts` and `app.ts`; they can only reach data through `repos`.
 
+## Testing LilyPads
+
+`@pond/sdk/testing` gives pad authors `createTestPad`: the pad runs against an in-memory table store and a fake `core`, with the JSON boundary guard on. `tableStoreContract` is the shared suite that the in-memory and SQLite pad stores both pass, so the fake can't drift. The host has an adversarial fixture pad (`apps/server/src/testing/fixturePad.ts`) used to prove isolation: Space scoping, enablement gates, permission checks and failure auto-disable.
+
 ## Migration tests
 
 Migrations are forward-only and must run on a database restored from an older backup. The harness in `apps/server/src/db/`:

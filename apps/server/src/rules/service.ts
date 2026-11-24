@@ -7,7 +7,13 @@ import type {
   TransactionView,
   UpdateRuleInput,
 } from '@pond/shared'
-import { LedgerError, canEditSpace, type Actor, type Deps } from '../ledger/service.js'
+import {
+  LedgerError,
+  announceTransaction,
+  canEditSpace,
+  type Actor,
+  type Deps,
+} from '../ledger/service.js'
 import { checkTransferPair, orientTransfer } from '../ledger/transfers.js'
 import { viewTransaction } from '../ledger/visibility.js'
 import type { NewSplit, RuleRecord, TransactionWithSplits } from '../repos/types.js'
@@ -261,7 +267,10 @@ export function runRulesOnExisting(d: Deps, spaceId: string): RuleRunSummary {
   for (const t of eligibleTransactions(d, spaceId, RUN_LIMIT)) ids.push(t.txn.id)
   for (const id of ids) {
     summary.examined++
-    if (applyRulesToTransaction(d, id).changed) summary.changed++
+    if (applyRulesToTransaction(d, id).changed) {
+      summary.changed++
+      announceTransaction(d, 'split.changed', id)
+    }
   }
   return summary
 }

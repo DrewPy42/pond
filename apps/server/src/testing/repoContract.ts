@@ -1100,4 +1100,282 @@ export function repoContract(label: string, make: () => Repos): void {
       expect(found.map((t) => t.txn.id)).toEqual(['good'])
     })
   })
+
+  describe(`${label}: PadRepo (installs, enablement, migrations, job runs)`, () => {
+    const world = () => {
+      const r = ledgerWorld()
+      r.users.create(buildUser({ id: 'adm', username: 'adm', isAdmin: true }))
+      return r
+    }
+    const install = (padId: string, over = {}) => ({
+      padId,
+      version: '1.0.0',
+      tier: 'official' as const,
+      permissionsGranted: ['transactions:read'],
+      installedBy: 'adm',
+      installedAt: '2030-01-01T00:00:00.000Z',
+      enabled: true,
+      ...over,
+    })
+
+    /**
+     * Function: pads.installs.upsert, get, list, delete
+     * Inputs:   install "b" then "a"; re-install "a" with a new version and more permissions; delete "b"
+     * Expected: listed by pad id; upsert replaces the record (permissions round-trip as a list);
+     *           delete removes it; an unknown installer is refused (MissingParentError)
+     */
+    it('records installs and replaces them on upsert', () => {
+      const r = world()
+      r.pads.installs.upsert(install('b'))
+      r.pads.installs.upsert(install('a'))
+      expect(r.pads.installs.list().map((i) => i.padId)).toEqual(['a', 'b'])
+      r.pads.installs.upsert(
+        install('a', {
+          version: '1.1.0',
+          permissionsGranted: ['transactions:read', 'accounts:read'],
+        }),
+      )
+      expect(r.pads.installs.get('a')).toMatchObject({
+        version: '1.1.0',
+        permissionsGranted: ['transactions:read', 'accounts:read'],
+        enabled: true,
+      })
+      r.pads.installs.delete('b')
+      expect(r.pads.installs.get('b')).toBeUndefined()
+      expect(() => r.pads.installs.upsert(install('c', { installedBy: 'ghost' }))).toThrow(
+        MissingParentError,
+      )
+    })
+
+    /**
+     * Function: pads.enablement.enable, disable, isEnabled, padsForSpace, spacesForPad, removeAllForPad
+     * Inputs:   enable "a" for S1 and S2 and "b" for S1 (enabling twice is harmless); disable "a" in S2;
+     *           then remove all of "a"
+     * Expected: the lookups reflect each change; unknown Space or user gives MissingParentError
+     */
+    it('tracks which pads are on in which Spaces', () => {
+      const r = world()
+      r.pads.enablement.enable('a', 'S1', 'adm', '2030-01-01T00:00:00.000Z')
+      r.pads.enablement.enable('a', 'S1', 'adm', '2030-01-02T00:00:00.000Z')
+      r.pads.enablement.enable('a', 'S2', 'adm', '2030-01-01T00:00:00.000Z')
+      r.pads.enablement.enable('b', 'S1', 'adm', '2030-01-01T00:00:00.000Z')
+      expect(r.pads.enablement.padsForSpace('S1')).toEqual(['a', 'b'])
+      expect(r.pads.enablement.spacesForPad('a')).toEqual(['S1', 'S2'])
+      r.pads.enablement.disable('a', 'S2')
+      expect(r.pads.enablement.isEnabled('a', 'S2')).toBe(false)
+      expect(r.pads.enablement.isEnabled('a', 'S1')).toBe(true)
+      r.pads.enablement.removeAllForPad('a')
+      expect(r.pads.enablement.padsForSpace('S1')).toEqual(['b'])
+      expect(() => r.pads.enablement.enable('a', 'ghost', 'adm', 'x')).toThrow(MissingParentError)
+      expect(() => r.pads.enablement.enable('a', 'S1', 'ghost', 'x')).toThrow(MissingParentError)
+    })
+
+    /**
+     * Function: pads.migrations.record, applied, removeAllForPad; pads.jobRuns.get, set, removeAllForPad
+     * Inputs:   migrations "0001" and "0002" for pad "a" and "0001" for "b"; a job run set twice; removal
+     * Expected: applied lists a pad's migrations in order; job runs keep the latest time per pad, job and
+     *           Space; removeAllForPad clears only that pad
+     */
+    it('records applied migrations and job runs per pad', () => {
+      const r = world()
+      r.pads.migrations.record('a', '0001', '2030-01-01T00:00:00.000Z')
+      r.pads.migrations.record('a', '0002', '2030-01-02T00:00:00.000Z')
+      r.pads.migrations.record('b', '0001', '2030-01-01T00:00:00.000Z')
+      expect(r.pads.migrations.applied('a')).toEqual(['0001', '0002'])
+      r.pads.jobRuns.set('a', 'rollup', 'S1', '2030-01-01T06:00:00.000Z')
+      r.pads.jobRuns.set('a', 'rollup', 'S1', '2030-02-01T06:00:00.000Z')
+      r.pads.jobRuns.set('b', 'rollup', 'S1', '2030-01-01T06:00:00.000Z')
+      expect(r.pads.jobRuns.get('a', 'rollup', 'S1')).toBe('2030-02-01T06:00:00.000Z')
+      expect(r.pads.jobRuns.get('a', 'rollup', 'S2')).toBeUndefined()
+      r.pads.migrations.removeAllForPad('a')
+      r.pads.jobRuns.removeAllForPad('a')
+      expect(r.pads.migrations.applied('a')).toEqual([])
+      expect(r.pads.migrations.applied('b')).toEqual(['0001'])
+      expect(r.pads.jobRuns.get('a', 'rollup', 'S1')).toBeUndefined()
+      expect(r.pads.jobRuns.get('b', 'rollup', 'S1')).toBeDefined()
+    })
+  })
+
+  describe(`${label}: SettingsRepo`, () => {
+    /**
+     * Function: settings.get, set, deleteByPrefix
+     * Inputs:   a global and a per-Space setting under "lp.notes.", a structured value, an overwrite, and
+     *           a setting under another prefix; then deleteByPrefix("lp.notes.")
+     * Expected: values round-trip (including objects); overwriting replaces; scopes don't mix; the prefix
+     *           delete removes only that pad's settings
+     */
+    it("stores settings by scope and removes a pad's by prefix", () => {
+      const r = make()
+      r.settings.set('global', '', 'lp.notes.theme', 'dark')
+      r.settings.set('space', 'S1', 'lp.notes.showDone', true)
+      r.settings.set('space', 'S1', 'lp.notes.cfg', { a: [1, 2] })
+      r.settings.set('space', 'S1', 'lp.notes.showDone', false)
+      r.settings.set('global', '', 'lp.other.x', 1)
+      expect(r.settings.get('global', '', 'lp.notes.theme')).toBe('dark')
+      expect(r.settings.get('space', 'S1', 'lp.notes.showDone')).toBe(false)
+      expect(r.settings.get('space', 'S1', 'lp.notes.cfg')).toEqual({ a: [1, 2] })
+      expect(r.settings.get('space', 'S2', 'lp.notes.showDone')).toBeUndefined()
+      r.settings.deleteByPrefix('lp.notes.')
+      expect(r.settings.get('global', '', 'lp.notes.theme')).toBeUndefined()
+      expect(r.settings.get('space', 'S1', 'lp.notes.cfg')).toBeUndefined()
+      expect(r.settings.get('global', '', 'lp.other.x')).toBe(1)
+    })
+  })
+
+  describe(`${label}: ReportRepo.sumSplits`, () => {
+    const seedMoney = () => {
+      const r = ledgerWorld()
+      r.accounts.create(buildAccount({ id: 'A3', name: 'Savings', primarySpaceId: 'S1' }))
+      for (const [id, name, kind] of [
+        ['food', 'Food', 'expense'],
+        ['pay', 'Pay', 'income'],
+        ['xfer', 'Transfer', 'transfer'],
+      ] as const) {
+        r.categories.create(buildCategory({ id, spaceId: 'S1', name, kind }))
+      }
+      const add = (
+        id: string,
+        accountId: string,
+        date: string,
+        amountCents: number,
+        categoryId?: string,
+        spaceId = 'S1',
+      ) =>
+        r.transactions.create(buildTransaction({ id, accountId, date, amountCents }), [
+          sp(`${id}-s`, spaceId, amountCents, categoryId),
+        ])
+      add('groc', 'A1', '2030-01-10', -3000, 'food')
+      add('coffee', 'A1', '2030-01-12', -500, 'food')
+      add('paycheck', 'A1', '2030-01-15', 200000, 'pay')
+      add('misc', 'A1', '2030-01-20', -700)
+      add('xfercat', 'A1', '2030-01-21', -5000, 'xfer')
+      add('out', 'A1', '2030-01-22', -9000)
+      add('in', 'A3', '2030-01-22', 9000)
+      r.transfers.create({
+        id: 'l1',
+        fromTransactionId: 'out',
+        toTransactionId: 'in',
+        createdBy: 'user',
+      })
+      add('gone', 'A1', '2030-01-11', -1000, 'food')
+      r.transactions.update('gone', { status: 'removed' })
+      add('feb', 'A1', '2030-02-03', -400, 'food')
+      add('other', 'A2', '2030-01-10', -999, undefined, 'S2')
+      return r
+    }
+    const row = (
+      categoryId: string | null,
+      kind: string | null,
+      month: string | null,
+      cents: number,
+      count: number,
+    ) => ({ categoryId, kind, month, cents, count })
+
+    /**
+     * Function: reports.sumSplits(spaceId, { groupBy: "category", from, to })
+     * Inputs:   January 2030 in Space S1: food -3000 and -500, pay +200000, an uncategorized -700, a
+     *           transfer-kind category -5000, a linked transfer pair (-9000 / +9000), a removed -1000 food,
+     *           a February -400, and another Space's -999
+     * Expected: one row per category: food -3500 (2), pay +200000 (1), uncategorized -700 (1). Transfer-kind
+     *           categories, linked transfers, removed transactions, other months and other Spaces are left out
+     */
+    it('totals splits by category, leaving out transfers, removed transactions and other Spaces', () => {
+      const r = seedMoney()
+      const rows = r.reports.sumSplits('S1', {
+        from: '2030-01-01',
+        to: '2030-01-31',
+        groupBy: 'category',
+      })
+      expect(rows).toEqual([
+        row(null, null, null, -700, 1),
+        row('food', 'expense', null, -3500, 2),
+        row('pay', 'income', null, 200000, 1),
+      ])
+    })
+
+    /**
+     * Function: reports.sumSplits (month and category_month grouping)
+     * Inputs:   January and February, grouped by month and by category_month
+     * Expected: by month: Jan -4700+... as signed totals per month (Jan 195800, Feb -400); by
+     *           category_month: separate rows per category and month
+     */
+    it('groups by month and by category and month', () => {
+      const r = seedMoney()
+      const byMonth = r.reports.sumSplits('S1', {
+        from: '2030-01-01',
+        to: '2030-02-28',
+        groupBy: 'month',
+      })
+      expect(byMonth).toEqual([
+        row(null, null, '2030-01', 195800, 4),
+        row(null, null, '2030-02', -400, 1),
+      ])
+      const both = r.reports.sumSplits('S1', {
+        from: '2030-01-01',
+        to: '2030-02-28',
+        groupBy: 'category_month',
+      })
+      expect(both.map((x) => [x.categoryId, x.month, x.cents])).toEqual([
+        [null, '2030-01', -700],
+        ['food', '2030-01', -3500],
+        ['food', '2030-02', -400],
+        ['pay', '2030-01', 200000],
+      ])
+    })
+
+    /**
+     * Function: reports.sumSplits (filters)
+     * Inputs:   a category filter [food]; excludeKinds [] (so the transfer-kind category counts, but linked
+     *           transfers still do not); a one-day range; an empty range
+     * Expected: only food; the transfer-kind -5000 row appears; the one-day range includes both ends; empty
+     *           gives no rows
+     */
+    it('filters by category, excluded kinds and date range', () => {
+      const r = seedMoney()
+      expect(
+        r.reports.sumSplits('S1', {
+          from: '2030-01-01',
+          to: '2030-12-31',
+          groupBy: 'category',
+          categoryIds: ['food'],
+        }),
+      ).toEqual([row('food', 'expense', null, -3900, 3)])
+      const all = r.reports.sumSplits('S1', {
+        from: '2030-01-01',
+        to: '2030-01-31',
+        groupBy: 'category',
+        excludeKinds: [],
+      })
+      expect(all.find((x) => x.categoryId === 'xfer')).toMatchObject({
+        cents: -5000,
+        kind: 'transfer',
+      })
+      expect(all.some((x) => x.cents === -9000 || x.cents === 9000)).toBe(false)
+      expect(
+        r.reports.sumSplits('S1', { from: '2030-01-10', to: '2030-01-10', groupBy: 'category' }),
+      ).toEqual([row('food', 'expense', null, -3000, 1)])
+      expect(
+        r.reports.sumSplits('S1', { from: '2031-01-01', to: '2031-01-31', groupBy: 'category' }),
+      ).toEqual([])
+    })
+
+    /**
+     * Function: reports.sumSplits (cross-Space splits)
+     * Inputs:   a -6000 transaction on S2's account split -4000 into S2 and -2000 into S1
+     * Expected: S1's total counts only its own -2000; S2's counts its own -4000
+     */
+    it('counts only the splits that are in the requested Space', () => {
+      const r = ledgerWorld()
+      r.transactions.create(
+        buildTransaction({ id: 'lunch', accountId: 'A2', date: '2030-01-14', amountCents: -6000 }),
+        [sp('a', 'S2', -4000), sp('b', 'S1', -2000)],
+      )
+      expect(
+        r.reports.sumSplits('S1', { from: '2030-01-01', to: '2030-01-31', groupBy: 'category' }),
+      ).toEqual([row(null, null, null, -2000, 1)])
+      expect(
+        r.reports.sumSplits('S2', { from: '2030-01-01', to: '2030-01-31', groupBy: 'category' }),
+      ).toEqual([row(null, null, null, -4000, 1)])
+    })
+  })
 }

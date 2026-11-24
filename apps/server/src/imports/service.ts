@@ -6,7 +6,7 @@ import type {
   ImportResult,
 } from '@pond/shared'
 import { recordAudit } from '../audit.js'
-import { LedgerError, type Actor, type Deps } from '../ledger/service.js'
+import { LedgerError, announceTransaction, type Actor, type Deps } from '../ledger/service.js'
 import { applyRulesToTransaction } from '../rules/service.js'
 import type { AccountRecord } from '../repos/types.js'
 import { CsvError, parseCsv } from './csv.js'
@@ -179,7 +179,10 @@ export function commitImport(
   })
 
   let rulesApplied = 0
-  for (const id of created) if (applyRulesToTransaction(d, id).changed) rulesApplied++
+  for (const id of created) {
+    if (applyRulesToTransaction(d, id).changed) rulesApplied++
+    announceTransaction(d, 'transaction.created', id) // after rules, so pads see the final state
+  }
 
   recordAudit(
     d.repos.audit,

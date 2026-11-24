@@ -15,6 +15,9 @@ import {
   sql,
 } from 'drizzle-orm'
 import { schemaVersion, type DbHandle } from '../db/index.js'
+import { newId as defaultNewId } from '../db/ids.js'
+import type { SplitSumRow } from '@pond/sdk'
+import { createSqlitePadStore } from './padStore.js'
 import { checkSplits } from '../ledger/splits.js'
 import {
   accounts,
@@ -23,7 +26,12 @@ import {
   categories,
   connections,
   importBatches,
+  lilypadInstalls,
+  lilypadJobRuns,
+  lilypadMigrations,
+  lilypadSpaceEnablement,
   rules,
+  settings,
   recoveryCodes,
   sessions,
   spaceMembers,
@@ -51,7 +59,11 @@ import {
 } from './types.js'
 
 /** Real repositories: the only place (with db/ and migrations) that talks to Drizzle/SQLite. */
-export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new Date()): Repos {
+export function createDrizzleRepos(
+  handle: DbHandle,
+  now: () => Date = () => new Date(),
+  newId: () => string = defaultNewId,
+): Repos {
   const db = handle.db
   const iso = () => now().toISOString()
 
@@ -965,6 +977,194 @@ export function createDrizzleRepos(handle: DbHandle, now: () => Date = () => new
       },
       delete: (id) => void db.delete(transferLinks).where(eq(transferLinks.id, id)).run(),
     },
+
+    pads: {
+      installs: {
+        get: (padId) => {
+          const r = db.select().from(lilypadInstalls).where(eq(lilypadInstalls.padId, padId)).get()
+          return r && { ...r, permissionsGranted: r.permissionsGranted as string[] }
+        },
+        list: () =>
+          db
+            .select()
+            .from(lilypadInstalls)
+            .orderBy(asc(lilypadInstalls.padId))
+            .all()
+            .map((r) => ({ ...r, permissionsGranted: r.permissionsGranted as string[] })),
+        upsert: (rec) =>
+          mapWrite(
+            () =>
+              void db
+                .insert(lilypadInstalls)
+                .values(rec)
+                .onConflictDoUpdate({ target: lilypadInstalls.padId, set: { ...rec } })
+                .run(),
+          ),
+        delete: (padId) =>
+          void db.delete(lilypadInstalls).where(eq(lilypadInstalls.padId, padId)).run(),
+      },
+      enablement: {
+        isEnabled: (padId, spaceId) =>
+          !!db
+            .select({ p: lilypadSpaceEnablement.padId })
+            .from(lilypadSpaceEnablement)
+            .where(
+              and(
+                eq(lilypadSpaceEnablement.padId, padId),
+                eq(lilypadSpaceEnablement.spaceId, spaceId),
+              ),
+            )
+            .get(),
+        padsForSpace: (spaceId) =>
+          db
+            .select({ p: lilypadSpaceEnablement.padId })
+            .from(lilypadSpaceEnablement)
+            .where(eq(lilypadSpaceEnablement.spaceId, spaceId))
+            .orderBy(asc(lilypadSpaceEnablement.padId))
+            .all()
+            .map((r) => r.p),
+        spacesForPad: (padId) =>
+          db
+            .select({ s: lilypadSpaceEnablement.spaceId })
+            .from(lilypadSpaceEnablement)
+            .where(eq(lilypadSpaceEnablement.padId, padId))
+            .orderBy(asc(lilypadSpaceEnablement.spaceId))
+            .all()
+            .map((r) => r.s),
+        enable: (padId, spaceId, by, at) =>
+          mapWrite(
+            () =>
+              void db
+                .insert(lilypadSpaceEnablement)
+                .values({ padId, spaceId, enabledBy: by, enabledAt: at })
+                .onConflictDoNothing()
+                .run(),
+          ),
+        disable: (padId, spaceId) =>
+          void db
+            .delete(lilypadSpaceEnablement)
+            .where(
+              and(
+                eq(lilypadSpaceEnablement.padId, padId),
+                eq(lilypadSpaceEnablement.spaceId, spaceId),
+              ),
+            )
+            .run(),
+        removeAllForPad: (padId) =>
+          void db
+            .delete(lilypadSpaceEnablement)
+            .where(eq(lilypadSpaceEnablement.padId, padId))
+            .run(),
+      },
+      migrations: {
+        applied: (padId) =>
+          db
+            .select({ n: lilypadMigrations.name })
+            .from(lilypadMigrations)
+            .where(eq(lilypadMigrations.padId, padId))
+            .orderBy(asc(lilypadMigrations.appliedAt), asc(lilypadMigrations.name))
+            .all()
+            .map((r) => r.n),
+        record: (padId, name, at) =>
+          void db.insert(lilypadMigrations).values({ padId, name, appliedAt: at }).run(),
+        removeAllForPad: (padId) =>
+          void db.delete(lilypadMigrations).where(eq(lilypadMigrations.padId, padId)).run(),
+      },
+      jobRuns: {
+        get: (padId, job, spaceId) =>
+          db
+            .select({ at: lilypadJobRuns.lastRunAt })
+            .from(lilypadJobRuns)
+            .where(
+              and(
+                eq(lilypadJobRuns.padId, padId),
+                eq(lilypadJobRuns.jobName, job),
+                eq(lilypadJobRuns.spaceId, spaceId),
+              ),
+            )
+            .get()?.at,
+        set: (padId, job, spaceId, at) =>
+          void db
+            .insert(lilypadJobRuns)
+            .values({ padId, jobName: job, spaceId, lastRunAt: at })
+            .onConflictDoUpdate({
+              target: [lilypadJobRuns.padId, lilypadJobRuns.jobName, lilypadJobRuns.spaceId],
+              set: { lastRunAt: at },
+            })
+            .run(),
+        removeAllForPad: (padId) =>
+          void db.delete(lilypadJobRuns).where(eq(lilypadJobRuns.padId, padId)).run(),
+      },
+    },
+
+    settings: {
+      get: (scope, scopeId, key) =>
+        db
+          .select({ v: settings.value })
+          .from(settings)
+          .where(
+            and(eq(settings.scope, scope), eq(settings.scopeId, scopeId), eq(settings.key, key)),
+          )
+          .get()?.v,
+      set: (scope, scopeId, key, value) =>
+        void db
+          .insert(settings)
+          .values({
+            scope,
+            scopeId,
+            key,
+            value: value as never,
+            createdAt: iso(),
+            updatedAt: iso(),
+          })
+          .onConflictDoUpdate({
+            target: [settings.scope, settings.scopeId, settings.key],
+            set: { value: value as never, updatedAt: iso() },
+          })
+          .run(),
+      deleteByPrefix: (prefix) =>
+        void handle.sqlite
+          .prepare('DELETE FROM settings WHERE substr(key, 1, ?) = ?')
+          .run(prefix.length, prefix),
+    },
+
+    reports: {
+      sumSplits(spaceId, o) {
+        const excluded = o.excludeKinds ?? ['transfer']
+        const by = o.groupBy
+        const select = [
+          by !== 'month'
+            ? 's.category_id AS categoryId, c.kind AS kind'
+            : 'NULL AS categoryId, NULL AS kind',
+          by !== 'category' ? 'substr(t.date, 1, 7) AS month' : 'NULL AS month',
+          'sum(s.amount_cents) AS cents',
+          'count(*) AS count',
+        ].join(', ')
+        const group = [
+          by !== 'month' ? 's.category_id' : '',
+          by !== 'category' ? 'substr(t.date, 1, 7)' : '',
+        ]
+          .filter(Boolean)
+          .join(', ')
+        const params: (string | number)[] = [spaceId, o.from, o.to]
+        let where =
+          "s.space_id = ? AND t.status = 'active' AND t.date >= ? AND t.date <= ? AND NOT EXISTS (SELECT 1 FROM transfer_links l WHERE l.from_transaction_id = t.id OR l.to_transaction_id = t.id)"
+        if (excluded.length) {
+          where += ` AND (c.kind IS NULL OR c.kind NOT IN (${excluded.map(() => '?').join(', ')}))`
+          params.push(...excluded)
+        }
+        if (o.categoryIds?.length) {
+          where += ` AND s.category_id IN (${o.categoryIds.map(() => '?').join(', ')})`
+          params.push(...o.categoryIds)
+        }
+        const sqlText = `SELECT ${select} FROM splits s JOIN transactions t ON t.id = s.transaction_id LEFT JOIN categories c ON c.id = s.category_id WHERE ${where} GROUP BY ${group} ORDER BY ${group}`
+        return (handle.sqlite.prepare(sqlText).all(...params) as SplitSumRow[]).map((r) => ({
+          ...r,
+        }))
+      },
+    },
+
+    padStore: createSqlitePadStore(handle.sqlite, { newId, now }),
 
     system: { schemaVersion: () => schemaVersion(handle) },
     transaction: (fn) => handle.sqlite.transaction(fn)(),

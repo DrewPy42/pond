@@ -7,7 +7,10 @@ import { LoginLimiter } from '../auth/ratelimit.js'
 import { SetupCode } from '../auth/setupCode.js'
 import type { AppContext } from '../context.js'
 import { createCrypto } from '../crypto/index.js'
+import { createEventBus, type EventBus } from '../events.js'
+import { PadHost } from '../lilypads/host.js'
 import { createLogger } from '../logger.js'
+import type { PadModule } from '@pond/sdk'
 import { createFakeRepos } from './fakeRepos.js'
 import { FakeSimpleFin } from './fakeSimpleFin.js'
 
@@ -15,6 +18,9 @@ export const PASSWORD = 'correct-horse-battery-1'
 
 export interface TestEnv {
   ctx: AppContext
+  /** Core events (delivered asynchronously: `await env.events.whenIdle()` before asserting). */
+  events: EventBus
+  padHost: PadHost
   /** Script what the "bank" returns and inspect what we asked. */
   simplefin: FakeSimpleFin
   app: Express
@@ -26,25 +32,45 @@ export interface TestEnv {
  * A complete app wired to in-memory fake repositories (no database), a fixed clock you can
  * advance, predictable ids (`id-1`, `id-2`, ...) and a random throwaway crypto key.
  */
-export function makeEnv(opts: { withSetupCode?: boolean } = {}): TestEnv {
+export function makeEnv(
+  opts: { withSetupCode?: boolean; pads?: PadModule[]; padFailureLimit?: number } = {},
+): TestEnv {
   let t = Date.parse('2026-01-01T12:00:00Z')
   const clock = () => t
   let idCounter = 0
   const simplefin = new FakeSimpleFin()
-  const ctx: AppContext = {
-    repos: createFakeRepos(() => new Date(t)),
+  const repos = createFakeRepos(() => new Date(t))
+  const log = createLogger('silent')
+  const events = createEventBus()
+  const padHost = new PadHost({
+    repos,
     crypto: createCrypto(randomBytes(32)),
-    log: createLogger('silent'),
+    log,
+    now: () => new Date(t),
+    newId: () => `pad-id-${++idCounter}`,
+    timeZone: 'UTC',
+    events,
+    source: { list: () => opts.pads ?? [] },
+    includeDevPads: true,
+    strictJson: true, // every call between a pad and Pond must be plain JSON
+    failureLimit: opts.padFailureLimit,
+  })
+  const ctx: AppContext = {
+    repos,
+    crypto: createCrypto(randomBytes(32)),
+    log,
     setupCode: new SetupCode(opts.withSetupCode ?? true),
     limiter: new LoginLimiter({ clock }),
     cookieSecure: false,
     now: () => new Date(t),
     newId: () => `id-${++idCounter}`,
+    events,
+    padHost,
     simplefin,
     timeZone: 'UTC',
     spaceRoutes: [],
   }
-  return { ctx, simplefin, app: createApp(ctx), advance: (ms) => void (t += ms) }
+  return { ctx, events, padHost, simplefin, app: createApp(ctx), advance: (ms) => void (t += ms) }
 }
 
 export interface Res {

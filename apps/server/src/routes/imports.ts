@@ -11,7 +11,7 @@ export function registerImportRoutes(
   ctx: AppContext,
   sp: ReturnType<typeof createSpaceRouter>,
 ): void {
-  const deps = { repos: ctx.repos, newId: ctx.newId, now: ctx.now }
+  const deps = { repos: ctx.repos, newId: ctx.newId, now: ctx.now, events: ctx.events }
   const actor = (req: Request) => ({ id: req.auth!.user.id, isAdmin: req.auth!.user.isAdmin })
   const space = (req: Request) => req.space!.id
 

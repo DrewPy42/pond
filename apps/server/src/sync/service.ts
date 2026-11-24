@@ -1,7 +1,7 @@
 import type { ConnectionAccountView, ConnectionView } from '@pond/shared'
 import { recordAudit } from '../audit.js'
 import type { Crypto } from '../crypto/index.js'
-import { LedgerError, type Actor, type Deps } from '../ledger/service.js'
+import { LedgerError, announceTransaction, type Actor, type Deps } from '../ledger/service.js'
 import type {
   AccountRecord,
   AccountType,
@@ -277,7 +277,9 @@ function applyAccount(
   windowStart: string,
   nowEpoch: number,
   s: SyncSummary,
-): void {
+): { created: string[]; changed: string[] } {
+  const created: string[] = []
+  const changed: string[] = []
   const incoming = sf.transactions.map((t) => toIncoming(t, d.timeZone, nowEpoch))
   // List a little before the window so a day-boundary difference can't hide an existing row.
   const existing = d.repos.transactions.listForAccountSince(acct.id, shiftDate(windowStart, -3))
@@ -320,6 +322,7 @@ function applyAccount(
       splits,
     )
     s.inserted++
+    created.push(id)
     if (carryFrom) {
       unlink(carryFrom)
       d.repos.transactions.update(carryFrom.txn.id, { status: 'removed', supersededBy: id })
@@ -347,11 +350,13 @@ function applyAccount(
         : undefined
     d.repos.transactions.update(u.existing.txn.id, u.patch, splits)
     s.updated++
+    changed.push(u.existing.txn.id)
   }
   for (const r of plan.removals) {
     unlink(r)
     d.repos.transactions.update(r.txn.id, { status: 'removed' })
     s.removed++
+    changed.push(r.txn.id)
   }
   for (const f of plan.reviewFlags) {
     if (!f.txn.needsReview) d.repos.transactions.update(f.txn.id, { needsReview: true })
@@ -366,6 +371,7 @@ function applyAccount(
     availableCents: sf.availableCents,
     source: 'sync',
   })
+  return { created, changed }
 }
 
 /** Steps 3 to 7 for one connection. Failures are recorded on the connection, not thrown. */
@@ -410,6 +416,7 @@ export async function syncConnection(
 
   const windowStart = epochToDate(Math.floor(start.getTime() / 1000), d.timeZone)
   let skipped = false
+  const syncedSpaces = new Set<string>()
   for (const sf of result.accounts) {
     const acct = d.repos.accounts.findByExternal(conn.id, sf.id)
     if (!acct) {
@@ -428,11 +435,16 @@ export async function syncConnection(
       skipped = true
       continue
     }
-    d.repos.transaction(() => applyAccount(d, acct, sf, windowStart, nowEpoch, s))
+    const done = d.repos.transaction(() => applyAccount(d, acct, sf, windowStart, nowEpoch, s))
     s.accountsSynced++
+    // Announce only after the data is committed.
+    for (const id of done.created) announceTransaction(d, 'transaction.created', id)
+    for (const id of done.changed) announceTransaction(d, 'transaction.updated', id)
+    syncedSpaces.add(acct.primarySpaceId)
   }
 
   s.warnings.push(...result.messages.map((m) => m.msg))
+  for (const spaceId of syncedSpaces) d.events?.emit({ type: 'sync.completed', spaceId })
   const authProblem = result.messages.some((m) => /^(gen|con)\.auth/.test(m.code))
   d.repos.connections.update(conn.id, {
     // Don't move the window forward past an account we had to skip: its data is still owed.

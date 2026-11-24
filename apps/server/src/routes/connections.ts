@@ -29,6 +29,7 @@ export function connectionsRouter(ctx: AppContext): Router {
     repos: ctx.repos,
     newId: ctx.newId,
     now: ctx.now,
+    events: ctx.events,
     crypto: ctx.crypto,
     client: ctx.simplefin,
     timeZone: ctx.timeZone,
