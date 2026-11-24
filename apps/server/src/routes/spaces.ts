@@ -7,6 +7,7 @@ import { requireAdmin, requireAuth } from '../middleware/auth.js'
 import { seedCategories } from '../ledger/service.js'
 import { createSpaceRouter } from '../middleware/spaceRouter.js'
 import { registerImportRoutes } from './imports.js'
+import { registerPadSpaceRoutes } from './pads.js'
 import { registerLedgerRoutes } from './ledger.js'
 import { registerRuleRoutes } from './rules.js'
 import { MissingParentError, type SpaceRecord } from '../repos/types.js'
@@ -69,6 +70,7 @@ export function spacesRouter(ctx: AppContext): Router {
       spaceId: id,
       meta: { type: b.type },
     })
+    ctx.events.emit({ type: 'space.created', spaceId: id })
     res.status(201).json({ space: spaceView(repos.spaces.findById(id)!, 'owner') })
   })
 
@@ -148,6 +150,8 @@ export function spacesRouter(ctx: AppContext): Router {
   registerLedgerRoutes(ctx, sp)
   registerRuleRoutes(ctx, sp)
   registerImportRoutes(ctx, sp)
+  registerPadSpaceRoutes(ctx, sp)
+  ctx.padHost.attachRouter(sp)
 
   root.use('/:spaceId', sp.router)
   return root

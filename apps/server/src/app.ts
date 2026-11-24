@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth.js'
 import { connectionsRouter } from './routes/connections.js'
 import { healthRouter } from './routes/health.js'
 import { spacesRouter } from './routes/spaces.js'
+import { padsAdminRouter } from './routes/pads.js'
 import { usersRouter } from './routes/users.js'
 
 export const VERSION = '0.0.0'
@@ -38,6 +39,7 @@ export function createApp(ctx: AppContext): Express {
   app.use('/api/spaces', spacesRouter(ctx))
   app.use('/api/audit-log', auditRouter(ctx))
   app.use('/api/connections', connectionsRouter(ctx))
+  app.use('/api/lilypads', padsAdminRouter(ctx))
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' })

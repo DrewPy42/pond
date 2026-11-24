@@ -12,6 +12,8 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@pond/lilypad-template": "workspace:*",
+    "@pond/sdk": "workspace:*",
     "@pond/shared": "workspace:*",
     "argon2": "^0.45.2",
     "better-sqlite3": "^13.2.0",

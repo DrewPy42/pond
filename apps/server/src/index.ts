@@ -6,6 +6,9 @@ import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
 import { openDb, runMigrations } from './db/index.js'
 import { newId } from './db/ids.js'
 import { seedMissingCategories } from './ledger/service.js'
+import { createEventBus } from './events.js'
+import { PadHost } from './lilypads/host.js'
+import { registrySource } from './lilypads/registry.js'
 import { createLogger } from './logger.js'
 import { createHttpSimpleFinClient } from './simplefin/client.js'
 import { clampIntervalHours, startSyncScheduler } from './sync/scheduler.js'
@@ -31,6 +34,25 @@ if (setupCode.active) {
 }
 
 const simplefin = createHttpSimpleFinClient()
+const events = createEventBus((e, ev) =>
+  log.error(
+    { err: { name: (e as Error)?.name, message: (e as Error)?.message }, event: ev.type },
+    'event listener failed',
+  ),
+)
+const padHost = new PadHost({
+  repos,
+  crypto,
+  log,
+  now: () => new Date(),
+  newId,
+  timeZone: config.timeZone,
+  events,
+  source: registrySource,
+  includeDevPads: config.devPads,
+})
+
+await padHost.start() // loads installed pads (migrates and registers) before taking requests
 
 const app = createApp({
   repos,
@@ -41,6 +63,8 @@ const app = createApp({
   cookieSecure: config.cookieSecure,
   now: () => new Date(),
   newId,
+  events,
+  padHost,
   simplefin,
   timeZone: config.timeZone,
   spaceRoutes: [],
@@ -82,7 +106,19 @@ const scheduler = startSyncScheduler({
     ),
 })
 
+const padJobs = startSyncScheduler({
+  run: () => padHost.runDueJobs(),
+  intervalMs: 15 * 60_000,
+  firstDelayMs: 30_000,
+  onError: (e) =>
+    log.error(
+      { err: { name: (e as Error)?.name, message: (e as Error)?.message } },
+      'LilyPad job run crashed',
+    ),
+})
+
 function shutdown(signal: string) {
+  padJobs.stop()
   log.info({ signal }, 'shutting down')
   scheduler.stop()
   server.close(() => {

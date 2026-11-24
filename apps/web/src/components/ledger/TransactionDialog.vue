@@ -7,6 +7,8 @@ import { FormDialog, MoneyAmount, MoneyInput } from '../common'
 import { useAction } from '../../composables/useAction'
 import { useSpaceApi } from '../../composables/useSpaceApi'
 import { useSpacesStore } from '../../stores/spaces'
+import PadSlot from '../pads/PadSlot.vue'
+import { usePadsStore } from '../../stores/pads'
 import LinkTransferDialog from './LinkTransferDialog.vue'
 
 /**
@@ -24,6 +26,7 @@ const emit = defineEmits<{ saved: [] }>()
 
 const space = useSpaceApi()
 const spacesStore = useSpacesStore()
+const pads = usePadsStore()
 const { busy, error, run } = useAction()
 
 interface SplitRow {
@@ -360,6 +363,16 @@ const money = (cents: number) => ({ cents })
         @click="linkOpen = true"
         >Link as transfer…</v-btn
       >
+    </div>
+
+    <div v-if="transaction && pads.transactionPanels.length" class="mt-4">
+      <PadSlot
+        v-for="(w, i) in pads.transactionPanels"
+        :key="`${w.padId}/${i}`"
+        :pad-id="w.padId"
+        :component="w.component"
+        :props="{ transactionId: transaction.id }"
+      />
     </div>
 
     <template #actions-left>

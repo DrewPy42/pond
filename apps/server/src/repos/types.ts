@@ -1,4 +1,5 @@
 import type { RuleAction, RuleCondition } from '@pond/shared'
+import type { PadStore, SplitSumOptions, SplitSumRow } from '@pond/sdk'
 import type { Role } from '../types.js'
 
 /**
@@ -487,6 +488,64 @@ export interface ImportBatchRepo {
   listForAccounts(accountIds: string[], opts?: { limit?: number }): ImportBatchRecord[]
 }
 
+// ---------- LilyPad host (M5a) ----------
+
+export interface PadInstallRecord {
+  padId: string
+  version: string
+  tier: 'official'
+  permissionsGranted: string[]
+  installedBy: string
+  installedAt: string
+  enabled: boolean
+}
+export interface PadRepo {
+  installs: {
+    get(padId: string): PadInstallRecord | undefined
+    list(): PadInstallRecord[]
+    /** Throws MissingParentError for an unknown installer. */
+    upsert(rec: PadInstallRecord): void
+    delete(padId: string): void
+  }
+  enablement: {
+    isEnabled(padId: string, spaceId: string): boolean
+    padsForSpace(spaceId: string): string[]
+    spacesForPad(padId: string): string[]
+    /** Throws MissingParentError for an unknown Space or user. */
+    enable(padId: string, spaceId: string, by: string, at: string): void
+    disable(padId: string, spaceId: string): void
+    removeAllForPad(padId: string): void
+  }
+  migrations: {
+    applied(padId: string): string[]
+    record(padId: string, name: string, at: string): void
+    removeAllForPad(padId: string): void
+  }
+  jobRuns: {
+    get(padId: string, job: string, spaceId: string): string | undefined
+    set(padId: string, job: string, spaceId: string, at: string): void
+    removeAllForPad(padId: string): void
+  }
+}
+
+export type SettingScope = 'global' | 'space' | 'user'
+export interface SettingsRepo {
+  /** `scopeId` is '' for global settings. */
+  get(scope: SettingScope, scopeId: string, key: string): unknown
+  set(scope: SettingScope, scopeId: string, key: string, value: unknown): void
+  /** Removes every setting whose key starts with `prefix` (used when a pad's data is deleted). */
+  deleteByPrefix(prefix: string): void
+}
+
+export interface ReportRepo {
+  /**
+   * Totals of splits in one Space by category and/or month, in signed integer cents. Counts only
+   * active transactions in the date range, skips transactions linked as transfers, and (by default)
+   * categories of kind "transfer". This is the one way to total money for reports and pads.
+   */
+  sumSplits(spaceId: string, opts: SplitSumOptions): SplitSumRow[]
+}
+
 export interface Repos {
   users: UserRepo
   recoveryCodes: RecoveryCodeRepo
@@ -494,6 +553,11 @@ export interface Repos {
   spaces: SpaceRepo
   audit: AuditRepo
   connections: ConnectionRepo
+  pads: PadRepo
+  settings: SettingsRepo
+  reports: ReportRepo
+  /** Tables owned by LilyPads (lp_<padId>_*): DDL from pad migrations and the table API. */
+  padStore: PadStore
   rules: RuleRepo
   importBatches: ImportBatchRepo
   accounts: AccountRepo

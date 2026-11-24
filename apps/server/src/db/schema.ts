@@ -378,3 +378,63 @@ export const transferLinks = sqliteTable(
     uniqueIndex('transfer_links_to_unique').on(t.toTransactionId),
   ],
 )
+
+// ---------- LilyPad host (M5a) ----------
+// A pad's own tables (lp_<padId>_*) are created by the host from the pad's migrations and are not
+// described here. These tables record what is installed and enabled.
+
+export const lilypadInstalls = sqliteTable('lilypad_installs', {
+  padId: text('pad_id').primaryKey(),
+  version: text('version').notNull(),
+  tier: text('tier', { enum: ['official'] })
+    .notNull()
+    .default('official'),
+  /** JSON array of the permissions the admin approved. */
+  permissionsGranted: text('permissions_granted', { mode: 'json' }).notNull(),
+  installedBy: text('installed_by')
+    .notNull()
+    .references(() => users.id),
+  installedAt: text('installed_at').notNull(),
+  /** Global switch; Space owners also enable a pad per Space. */
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+})
+
+export const lilypadSpaceEnablement = sqliteTable(
+  'lilypad_space_enablement',
+  {
+    padId: text('pad_id').notNull(),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id),
+    enabledBy: text('enabled_by')
+      .notNull()
+      .references(() => users.id),
+    enabledAt: text('enabled_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.padId, t.spaceId] }),
+    index('lilypad_enablement_space_idx').on(t.spaceId),
+  ],
+)
+
+export const lilypadMigrations = sqliteTable(
+  'lilypad_migrations',
+  {
+    padId: text('pad_id').notNull(),
+    name: text('name').notNull(),
+    appliedAt: text('applied_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.padId, t.name] })],
+)
+
+/** When a scheduled pad job last ran for a Space, so a restart doesn't repeat it and downtime is caught up. */
+export const lilypadJobRuns = sqliteTable(
+  'lilypad_job_runs',
+  {
+    padId: text('pad_id').notNull(),
+    jobName: text('job_name').notNull(),
+    spaceId: text('space_id').notNull(),
+    lastRunAt: text('last_run_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.padId, t.jobName, t.spaceId] })],
+)

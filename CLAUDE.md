@@ -50,6 +50,7 @@ apps/server        Express API, sync, scheduler, backups, LilyPad host
 apps/web           Vue shell: sidebar, Space switcher, core pages, LilyPad mount points
 packages/shared    Types, zod schemas, money helpers shared by server and web
 packages/sdk       LilyPad SDK (MIT licensed): definePad, ctx types, UI helpers
+lilypads/template  Example/template LilyPad (notes), dev-only, MIT
 lilypads/personal  Personal Finance LilyPad (official)
 lilypads/business  Business Manager LilyPad (official, ported from business_manager)
 docs/              The spec

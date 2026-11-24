@@ -76,7 +76,7 @@
 
 **lilypad_migrations**: `pad_id`, `name`, `applied_at`
 
-LilyPad-owned tables are named `lp_<padId>_<table>` and reference core rows by UUID. They use no foreign keys into core tables, so a LilyPad can be removed cleanly.
+Pad settings live in the core settings table as `lp.<padId>.<key>`. LilyPad-owned tables are named `lp_<padId>_<table>` and reference core rows by UUID. They use no foreign keys into core tables, so a LilyPad can be removed cleanly.
 
 ## Cross-Space visibility
 

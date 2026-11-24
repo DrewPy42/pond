@@ -10,7 +10,7 @@ A **LilyPad** is a plugin that adds pages, tables, reports and behavior on top o
 
 ## Amendments (2026-11-22)
 
-The original contract was written before any code existed. These changes were agreed while designing the host (`lilypad-host-design.md`) and **win over the text below wherever they conflict**; the body will be rewritten when M5a implements them. Each says why, and none weakens security.
+The original contract was written before any code existed. These changes were agreed while designing the host (`lilypad-host-design.md`) and **win over the text below wherever they conflict**. M5a implemented them (see "As built (M5a)" below); where the code differs from the body, the code and that section are right. Each says why, and none weakens security.
 
 | # | Change | Why |
 |---|---|---|
@@ -22,6 +22,16 @@ The original contract was written before any code existed. These changes were ag
 | A6 | **`splits.sum({ from, to, groupBy, kind })`** is added to the core API: integer-cent totals from splits, excluding transfers and removed transactions. **Every `ctx` call must take and return plain JSON data** (enforced by a test that round-trips each call). | One way to total money (also used by core Reports); keeps the door open to running pads in isolation. |
 | A7 | **Loading and install:** official pads are discovered from a build-time registry behind a `PadSource` interface (the contract's runtime `entry` loading arrives with third-party pads). Pads may be **optional**: shipped in the image but off until an **admin installs** them (reviewing permissions), after which **Space owners enable** them per Space. An update can ship new pads; they appear as available, never auto-enabled. | Simplest packaging for v1 while keeping the swap to runtime loading contained to one interface. Admin approval of permissions is preserved. |
 | A8 | **Pad data uses a table API, not a query builder**: `find`, `findOne`, `insert`, `insertMany`, `update`, `delete`, `count`, with simple filters, text search and `or` groups, declarative migrations, and automatic Space scoping. No raw SQL. Replaces `ctx.db(table)` as a query builder. | A pad can't name a core table or another Space's rows, queries are parameterized by construction, it is easy to fake for tests, and it is plain JSON so pads can be isolated later. Easy to extend (add operations), hard to take back (removing raw SQL), so we start small. Also enough for pads that never touch finances, such as a CRM. |
+
+## As built (M5a)
+
+- **Management routes.** Admin: `GET /api/lilypads`, `POST /api/lilypads/:padId/install` (body must list exactly the permissions shown), `POST .../uninstall`, `GET|PUT /api/lilypads/:padId/settings` (global settings). Space owners: `GET /api/spaces/:spaceId/pads`, `GET .../pads/available`, `PUT .../pads/:padId/enabled`, `GET|PUT .../pads/:padId/settings`. Pad routes themselves are `/api/spaces/:spaceId/lilypads/<id>/...`, and the segment `_host` is reserved.
+- **Settings** are declared inline in the manifest (not a separate `settings.schema.json`) and stored as `lp.<id>.<key>`.
+- **Pad data** uses the table API (A8). Tables are `lp_<padId>_<table>`; every table gets `id`, `created_at`, `updated_at` (plus `space_id` for Space-scoped tables) automatically.
+- **Failure isolation.** Repeated handler/job/event failures disable the pad (routes return 503) and write `lilypad.auto_disabled` to the audit log. In tests the JSON boundary guard is always on.
+- **Dev-only pads.** `lilypads/template` is a working example (notes). It is only loaded when `POND_DEV_PADS=true` and `NODE_ENV` is not production; its web code ships in the bundle but does nothing otherwise.
+- **Not built yet:** admin UI for global settings (route exists), account-detail panel and report-page extension points (arrive with M7), core write APIs (A5).
+- **Licensing note:** `@pond/sdk` is MIT but imports types from `@pond/shared`, which is part of the AGPL core. Decide before publishing the SDK whether to make those types SDK-owned.
 
 ## Manifest (`lilypad.json`)
 

@@ -13,6 +13,8 @@ const envSchema = z.object({
   POND_TIMEZONE: z.string().optional(),
   /** How often bank data is pulled (hours). Clamped to 4..24; SimpleFIN refreshes about daily. */
   POND_SYNC_INTERVAL_HOURS: z.coerce.number().optional(),
+  /** Offer the template LilyPad (development only). */
+  POND_DEV_PADS: z.enum(['true', 'false']).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
 
@@ -26,6 +28,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     port: e.PORT,
     host: e.HOST,
     logLevel: e.LOG_LEVEL,
+    devPads: e.POND_DEV_PADS === 'true' && e.NODE_ENV !== 'production',
     timeZone: e.POND_TIMEZONE ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     syncIntervalHours: e.POND_SYNC_INTERVAL_HOURS,
     cookieSecure: e.POND_COOKIE_SECURE

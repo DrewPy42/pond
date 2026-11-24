@@ -1,0 +1,29 @@
+{
+  "name": "@pond/sdk",
+  "version": "0.1.0",
+  "description": "SDK for building Pond LilyPads",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts",
+    "./testing/contract": "./src/testing/storeContract.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "echo 'sdk is consumed from source'"
+  },
+  "dependencies": {
+    "@pond/shared": "workspace:*",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.1",
+    "vue": "^3.5.45"
+  }
+}

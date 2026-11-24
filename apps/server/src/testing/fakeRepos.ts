@@ -1,3 +1,5 @@
+import { createMemoryPadStore } from '@pond/sdk/testing'
+import type { SplitSumRow } from '@pond/sdk'
 import { checkSplits } from '../ledger/splits.js'
 import {
   DuplicateError,
@@ -8,6 +10,7 @@ import {
   type CategoryRecord,
   type ConnectionRecord,
   type ImportBatchRecord,
+  type PadInstallRecord,
   type RuleRecord,
   type NewSplit,
   type SplitRecord,
@@ -40,6 +43,12 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
   const connections = new Map<string, ConnectionRecord>()
   const ruleRows = new Map<string, RuleRecord>()
   const batches = new Map<string, ImportBatchRecord>()
+  const padInstalls = new Map<string, PadInstallRecord>()
+  const padEnabled = new Map<string, { padId: string; spaceId: string; by: string; at: string }>()
+  const padMigrations: { padId: string; name: string; at: string }[] = []
+  const padJobRuns = new Map<string, string>()
+  const settingRows = new Map<string, unknown>()
+  let padIdCounter = 0
   const accounts = new Map<string, AccountRecord>()
   const balances = new Map<string, BalanceSnapshotRecord>()
   const categories = new Map<string, CategoryRecord>()
@@ -532,6 +541,112 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
         [...links.values()].find((l) => l.fromTransactionId === id || l.toTransactionId === id),
       delete: (id) => void links.delete(id),
     },
+
+    pads: {
+      installs: {
+        get: (padId) => padInstalls.get(padId),
+        list: () => [...padInstalls.values()].sort((a, b) => a.padId.localeCompare(b.padId)),
+        upsert(rec) {
+          if (!users.has(rec.installedBy)) throw new MissingParentError('unknown user')
+          padInstalls.set(rec.padId, { ...rec })
+        },
+        delete: (padId) => void padInstalls.delete(padId),
+      },
+      enablement: {
+        isEnabled: (padId, spaceId) => padEnabled.has(`${padId}|${spaceId}`),
+        padsForSpace: (spaceId) =>
+          [...padEnabled.values()]
+            .filter((e) => e.spaceId === spaceId)
+            .map((e) => e.padId)
+            .sort(),
+        spacesForPad: (padId) =>
+          [...padEnabled.values()]
+            .filter((e) => e.padId === padId)
+            .map((e) => e.spaceId)
+            .sort(),
+        enable(padId, spaceId, by, at) {
+          if (!spaces.has(spaceId) || !users.has(by))
+            throw new MissingParentError('unknown space or user')
+          if (!padEnabled.has(`${padId}|${spaceId}`))
+            padEnabled.set(`${padId}|${spaceId}`, { padId, spaceId, by, at })
+        },
+        disable: (padId, spaceId) => void padEnabled.delete(`${padId}|${spaceId}`),
+        removeAllForPad(padId) {
+          for (const [k, e] of padEnabled) if (e.padId === padId) padEnabled.delete(k)
+        },
+      },
+      migrations: {
+        applied: (padId) => padMigrations.filter((m) => m.padId === padId).map((m) => m.name),
+        record(padId, name, at) {
+          if (padMigrations.some((m) => m.padId === padId && m.name === name))
+            throw new DuplicateError('already applied')
+          padMigrations.push({ padId, name, at })
+        },
+        removeAllForPad(padId) {
+          for (let i = padMigrations.length - 1; i >= 0; i--)
+            if (padMigrations[i]!.padId === padId) padMigrations.splice(i, 1)
+        },
+      },
+      jobRuns: {
+        get: (padId, job, spaceId) => padJobRuns.get(`${padId}|${job}|${spaceId}`),
+        set: (padId, job, spaceId, at) => void padJobRuns.set(`${padId}|${job}|${spaceId}`, at),
+        removeAllForPad(padId) {
+          for (const k of padJobRuns.keys()) if (k.startsWith(`${padId}|`)) padJobRuns.delete(k)
+        },
+      },
+    },
+
+    settings: {
+      get: (scope, scopeId, key) => settingRows.get(`${scope}|${scopeId}|${key}`),
+      set: (scope, scopeId, key, value) =>
+        void settingRows.set(`${scope}|${scopeId}|${key}`, structuredClone(value)),
+      deleteByPrefix(prefix) {
+        for (const k of settingRows.keys())
+          if (k.split('|').slice(2).join('|').startsWith(prefix)) settingRows.delete(k)
+      },
+    },
+
+    reports: {
+      sumSplits(spaceId, o) {
+        const excluded = o.excludeKinds ?? ['transfer']
+        const groups = new Map<string, SplitSumRow>()
+        for (const sp of splitRows.values()) {
+          if (sp.spaceId !== spaceId) continue
+          const t = txns.get(sp.transactionId)!
+          if (t.status !== 'active' || t.date < o.from || t.date > o.to) continue
+          if (
+            [...links.values()].some(
+              (l) => l.fromTransactionId === t.id || l.toTransactionId === t.id,
+            )
+          )
+            continue
+          const cat = sp.categoryId ? categories.get(sp.categoryId) : undefined
+          if (cat && excluded.includes(cat.kind)) continue
+          if (o.categoryIds?.length && !(sp.categoryId && o.categoryIds.includes(sp.categoryId)))
+            continue
+          const categoryId = o.groupBy !== 'month' ? sp.categoryId : null
+          const month = o.groupBy !== 'category' ? t.date.slice(0, 7) : null
+          const key = `${categoryId}|${month}`
+          const row = groups.get(key) ?? {
+            categoryId,
+            kind: categoryId ? (cat?.kind ?? null) : null,
+            month,
+            cents: 0,
+            count: 0,
+          }
+          row.cents += sp.amountCents
+          row.count += 1
+          groups.set(key, row)
+        }
+        const cmp = (a: string | null, b: string | null) =>
+          a === b ? 0 : a === null ? -1 : b === null ? 1 : a < b ? -1 : 1
+        return [...groups.values()].sort(
+          (a, b) => cmp(a.categoryId, b.categoryId) || cmp(a.month, b.month),
+        )
+      },
+    },
+
+    padStore: createMemoryPadStore({ newId: () => `pad-row-${++padIdCounter}`, now }),
 
     system: { schemaVersion: () => schemaVersion },
     transaction: (fn) => fn(),

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import PadSlot from '../components/pads/PadSlot.vue'
 import { useHealthStore } from '../stores/health'
+import { usePadsStore } from '../stores/pads'
 
 const store = useHealthStore()
+const pads = usePadsStore()
 onMounted(() => store.load())
 </script>
 
@@ -21,4 +24,14 @@ onMounted(() => store.load())
       <v-progress-circular v-else indeterminate size="20" />
     </v-card-text>
   </v-card>
+
+  <!-- Cards added by LilyPads running in this Space. -->
+  <v-row v-if="pads.widgets.length" class="mt-2">
+    <v-col v-for="(w, i) in pads.widgets" :key="`${w.padId}/${i}`" cols="12" md="6" lg="4">
+      <v-card border flat>
+        <v-card-title class="text-subtitle-1">{{ w.title ?? w.name }}</v-card-title>
+        <v-card-text><PadSlot :pad-id="w.padId" :component="w.component" /></v-card-text>
+      </v-card>
+    </v-col>
+  </v-row>
 </template>

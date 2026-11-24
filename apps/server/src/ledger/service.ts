@@ -15,6 +15,8 @@ import type {
   TransactionWithSplits,
 } from '../repos/types.js'
 import { SplitInvariantError } from '../repos/types.js'
+import type { EventBus } from '../events.js'
+import { distinct } from '../events.js'
 import { seedsFor } from './categorySeeds.js'
 import { checkTransferPair, orientTransfer } from './transfers.js'
 import { viewTransaction, type TransactionView } from './visibility.js'
@@ -43,6 +45,27 @@ export interface Deps {
   repos: Repos
   newId: () => string
   now: () => Date
+  /** Optional: when present, core changes are announced to LilyPads. */
+  events?: EventBus
+}
+
+/** The Spaces a transaction has splits in. */
+export const spacesOf = (found: TransactionWithSplits | undefined): string[] =>
+  distinct((found?.splits ?? []).map((sp) => sp.spaceId))
+
+/** Announces a change to every Space the transaction touches (after the data is committed). */
+export function announceTransaction(
+  d: Deps,
+  type: 'transaction.created' | 'transaction.updated' | 'split.changed',
+  transactionId: string,
+  extraSpaces: string[] = [],
+): void {
+  if (!d.events) return
+  const spaces = distinct([
+    ...spacesOf(d.repos.transactions.findById(transactionId)),
+    ...extraSpaces,
+  ])
+  for (const spaceId of spaces) d.events.emit({ type, spaceId, transactionId })
 }
 
 const today = (d: Deps) => d.now().toISOString().slice(0, 10)
@@ -133,6 +156,7 @@ export function createAccount(d: Deps, spaceId: string, input: CreateAccountInpu
       })
     }
   })
+  d.events?.emit({ type: 'account.added', spaceId, accountId: id })
   return getAccount(d, spaceId, id)
 }
 
@@ -334,6 +358,7 @@ export function createTransaction(
       splits,
     ),
   )
+  announceTransaction(d, 'transaction.created', id)
   return viewOf(d.repos.transactions.findById(id)!, spaceId)
 }
 
@@ -374,6 +399,9 @@ export function updateTransaction(
       splits,
     ),
   )
+  // Tell the Spaces that held a split before as well as those that hold one now.
+  announceTransaction(d, 'transaction.updated', txnId, spacesOf(found))
+  if (splits) announceTransaction(d, 'split.changed', txnId, spacesOf(found))
   return viewOf(d.repos.transactions.findById(txnId)!, spaceId)
 }
 
@@ -386,6 +414,7 @@ export function removeTransaction(d: Deps, spaceId: string, txnId: string): void
     if (link) d.repos.transfers.delete(link.id)
     d.repos.transactions.update(txnId, { status: 'removed' })
   })
+  announceTransaction(d, 'transaction.updated', txnId)
 }
 
 export function getTransaction(d: Deps, spaceId: string, txnId: string) {

@@ -197,4 +197,37 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
       if (t.import_batch_id !== 'b1') throw new Error('transaction lost its batch')
     },
   },
+  {
+    version: 6,
+    description: 'M5a: LilyPad host (installs, per-Space enablement, pad migrations, job runs)',
+    seed(db) {
+      db.exec(`
+        INSERT INTO users (id, username, display_name, password_hash, is_admin, status)
+          VALUES ('u1', 'admin', 'Admin', '$argon2id$stub', 1, 'active');
+        INSERT INTO spaces (id, name, type, currency) VALUES ('s1', 'Home', 'personal', 'USD');
+        INSERT INTO lilypad_installs (pad_id, version, tier, permissions_granted, installed_by, installed_at, enabled)
+          VALUES ('personal', '1.0.0', 'official', '["transactions:read"]', 'u1', '2030-01-01T00:00:00Z', 1);
+        INSERT INTO lilypad_space_enablement (pad_id, space_id, enabled_by, enabled_at)
+          VALUES ('personal', 's1', 'u1', '2030-01-01T00:00:00Z');
+        INSERT INTO lilypad_migrations (pad_id, name, applied_at) VALUES ('personal', '0001_init', '2030-01-01T00:00:00Z');
+        INSERT INTO lilypad_job_runs (pad_id, job_name, space_id, last_run_at) VALUES ('personal', 'rollup', 's1', '2030-01-01T06:00:00Z');
+      `)
+    },
+    verify(db) {
+      const i = one<{ version: string; permissions_granted: string }>(
+        db,
+        "SELECT version, permissions_granted FROM lilypad_installs WHERE pad_id = 'personal'",
+      )
+      if (i.version !== '1.0.0' || !i.permissions_granted.includes('transactions:read'))
+        throw new Error('install changed')
+      for (const [t, expected] of [
+        ['lilypad_space_enablement', 1],
+        ['lilypad_migrations', 1],
+        ['lilypad_job_runs', 1],
+      ] as const) {
+        const n = one<{ n: number }>(db, `SELECT count(*) AS n FROM ${t}`).n
+        if (n !== expected) throw new Error(`${t} lost or gained rows: ${n}`)
+      }
+    },
+  },
 ]

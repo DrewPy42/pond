@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { coreNav } from '../router'
 import { useAuthStore } from '../stores/auth'
+import { usePadsStore } from '../stores/pads'
 import { useSpacesStore } from '../stores/spaces'
 
 const drawer = ref(true)
@@ -11,8 +12,15 @@ const theme = useTheme()
 const isDark = () => theme.global.current.value.dark
 const auth = useAuthStore()
 const spaces = useSpacesStore()
+const pads = usePadsStore()
 const router = useRouter()
 onMounted(() => spaces.load())
+// Pads running in the active Space add their sidebar entries, widgets and panels.
+watch(
+  () => spaces.active?.id ?? null,
+  (id) => pads.load(id),
+  { immediate: true },
+)
 
 async function signOut() {
   await auth.logout()
@@ -43,7 +51,18 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
         rounded="lg"
       />
     </v-list>
-    <!-- LilyPad sidebar entries mount here (M5). -->
+    <v-list v-if="pads.sidebar.length" nav density="comfortable">
+      <v-list-subheader>Apps</v-list-subheader>
+      <v-list-item
+        v-for="item in pads.sidebar"
+        :key="`${item.padId}/${item.path}`"
+        :to="item.to"
+        :prepend-icon="item.icon"
+        :title="item.title"
+        color="on-surface"
+        rounded="lg"
+      />
+    </v-list>
   </v-navigation-drawer>
 
   <v-app-bar flat color="surface" border="b">

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { ConnectionView } from '@pond/shared'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
 import ConnectBankDialog from '../components/connections/ConnectBankDialog.vue'
 import ConnectionCard from '../components/connections/ConnectionCard.vue'
+import PadsAdminPanel from '../components/pads/PadsAdminPanel.vue'
+import PadsSpacePanel from '../components/pads/PadsSpacePanel.vue'
 import { useAction } from '../composables/useAction'
 import { useAuthStore } from '../stores/auth'
 import { useSpacesStore } from '../stores/spaces'
@@ -13,6 +15,7 @@ const spaces = useSpacesStore()
 const { busy, error, run } = useAction()
 const connections = ref<ConnectionView[]>([])
 const connectOpen = ref(false)
+const canManageSpace = computed(() => spaces.active?.role === 'owner')
 
 async function load() {
   if (!auth.user?.isAdmin) return
@@ -60,6 +63,17 @@ async function connected(c: ConnectionView) {
       @removed="load"
     />
     <ConnectBankDialog v-model="connectOpen" @connected="connected" />
+
+    <v-divider class="my-6" />
+    <PadsAdminPanel />
   </template>
-  <p v-else class="text-medium-emphasis">There is nothing to configure yet.</p>
+
+  <template v-if="canManageSpace || auth.user?.isAdmin">
+    <v-divider v-if="auth.user?.isAdmin" class="my-6" />
+    <PadsSpacePanel :key="spaces.active?.id" />
+  </template>
+
+  <p v-if="!auth.user?.isAdmin && !canManageSpace" class="text-medium-emphasis">
+    There is nothing to configure here yet.
+  </p>
 </template>
