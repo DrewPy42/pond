@@ -1,0 +1,12 @@
+{
+  "id": "personal",
+  "name": "Personal Finance",
+  "version": "1.0.0",
+  "author": "WibbitWorks",
+  "license": "AGPL-3.0-only",
+  "description": "Set a monthly amount for the categories you want to watch and see what is left to spend. Save toward goals.",
+  "pondApi": "^1.0",
+  "spaceTypes": ["personal"],
+  "permissions": ["transactions:read", "accounts:read", "balances:read"],
+  "settings": []
+}
