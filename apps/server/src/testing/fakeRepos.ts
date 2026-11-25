@@ -182,6 +182,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
         if (s) sessions.set(id, { ...s, reauthAt: at })
       },
       delete: (id) => void sessions.delete(id),
+      deleteAll: () => sessions.clear(),
       deleteForUser(userId, exceptId) {
         for (const [id, s] of sessions)
           if (s.userId === userId && id !== exceptId) sessions.delete(id)

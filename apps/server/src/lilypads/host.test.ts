@@ -952,3 +952,27 @@ describe('uninstalling', () => {
     )
   })
 })
+
+describe('PadHost safety copy before migrations (deps.beforeMigrate)', () => {
+  /**
+   * Function: PadHost.install when beforeMigrate fails, then works
+   * Inputs:   a safety-copy hook that throws once, installing the fixture pad twice
+   * Expected: the first install leaves the pad in "error" with none of its migrations applied;
+   *           the second applies them. Pond never changes the database unprotected.
+   */
+  it('does not migrate unless the safety copy was made', async () => {
+    const w = await world()
+    let fail = true
+    w.env.padHost['d'].beforeMigrate = async () => {
+      if (fail) throw new Error('Pond could not make a safety copy')
+    }
+    const first = await install(w)
+    expect(first.body.pad.state).toBe('error')
+    expect(first.body.pad.problem).toContain('safety copy')
+    expect(w.env.ctx.repos.pads.migrations.applied('fixture')).toEqual([])
+    fail = false
+    const second = await install(w)
+    expect(second.body.pad.state).toBe('running')
+    expect(w.env.ctx.repos.pads.migrations.applied('fixture').length).toBeGreaterThan(0)
+  })
+})

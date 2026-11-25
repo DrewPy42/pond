@@ -29,6 +29,9 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/
 export const isFileRef = (r: FileRef): boolean =>
   PAD_ID.test(r.padId) && ID.test(r.spaceId) && ID.test(r.fileId)
 
+/** Authenticated with a file's contents, so it only opens where it was stored. */
+export const fileContext = (r: FileRef): string => `pond-file:${r.padId}/${r.spaceId}/${r.fileId}`
+
 const assertRef = (r: FileRef): void => {
   if (!isFileRef(r)) throw new Error('Invalid file reference')
 }
@@ -39,7 +42,6 @@ const assertRef = (r: FileRef): void => {
  */
 export function createDiskFileStore(root: string, crypto: Crypto): FileStore {
   const pathOf = (r: FileRef) => path.join(root, r.padId, r.spaceId, r.fileId)
-  const context = (r: FileRef) => `pond-file:${r.padId}/${r.spaceId}/${r.fileId}`
   return {
     async put(ref, bytes) {
       assertRef(ref)
@@ -48,7 +50,7 @@ export function createDiskFileStore(root: string, crypto: Crypto): FileStore {
       // Written under a temporary name first, so a power cut can't leave half a file in place.
       const temp = `${target}.${randomBytes(6).toString('hex')}.tmp`
       try {
-        await fs.writeFile(temp, crypto.encryptBytes(bytes, context(ref)), {
+        await fs.writeFile(temp, crypto.encryptBytes(bytes, fileContext(ref)), {
           mode: 0o600,
           flag: 'wx',
           flush: true,
@@ -67,7 +69,7 @@ export function createDiskFileStore(root: string, crypto: Crypto): FileStore {
         if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
         throw e
       }
-      return crypto.decryptBytes(stored, context(ref))
+      return crypto.decryptBytes(stored, fileContext(ref))
     },
     async remove(ref) {
       if (!isFileRef(ref)) return

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
+import BackupWarningBanner from '../components/backups/BackupWarningBanner.vue'
 import ReauthDialog from '../components/common/ReauthDialog.vue'
 import FirstSpacePrompt from '../components/spaces/FirstSpacePrompt.vue'
 import { coreNav } from '../router'
@@ -119,6 +120,7 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
 
   <v-main>
     <v-container fluid class="pa-6">
+      <BackupWarningBanner v-if="auth.user?.isAdmin" />
       <FirstSpacePrompt v-if="needsSpace" />
       <router-view v-else :key="spaces.spaces.length ? 'ready' : 'empty'" />
     </v-container>

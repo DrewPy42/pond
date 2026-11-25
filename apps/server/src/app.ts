@@ -4,6 +4,7 @@ import type { AppContext } from './context.js'
 import { csrfGuard, sessionMiddleware } from './middleware/auth.js'
 import { auditRouter } from './routes/audit.js'
 import { authRouter } from './routes/auth.js'
+import { backupsRouter, setupRestoreRouter } from './routes/backups.js'
 import { connectionsRouter } from './routes/connections.js'
 import { healthRouter } from './routes/health.js'
 import { spacesRouter } from './routes/spaces.js'
@@ -35,6 +36,8 @@ export function createApp(ctx: AppContext): Express {
   // Every route below is deny-by-default: it declares requireAuth / requireAdmin / the Space
   // router itself. Only setup status/creation and login are open, and each is guarded inside.
   app.use('/api', authRouter(ctx))
+  app.use('/api/setup/restore', setupRestoreRouter(ctx))
+  app.use('/api/backups', backupsRouter(ctx))
   app.use('/api/users', usersRouter(ctx))
   app.use('/api/spaces', spacesRouter(ctx))
   app.use('/api/audit-log', auditRouter(ctx))

@@ -10,7 +10,8 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 | First-run admin hijack | Admin setup requires a one-time code printed to the server console/logs |
 | Weak or stolen passwords | Argon2id; TOTP 2FA; re-enter password for sensitive actions |
 | Household members seeing each other's data | Every API call checked against Space membership and role; deny by default |
-| Pi or SD card stolen, database copied | Secrets encrypted with AES-256-GCM; optional startup passphrase |
+| A copy of the database or files folder alone | Secrets and uploaded files encrypted with AES-256-GCM, key stored separately |
+| Pi or drive stolen | **Not protected in v1:** the key is on the same drive as the data |
 | Exposed to the internet | v1 is home-network only; no port forwarding |
 | Bad or tampered update | Signed release images; automatic backup before migrations |
 | Malicious LilyPad | v1 runs official pads only; API built for later isolation |
@@ -24,7 +25,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
 - **Rate limiting:** per IP and per username, with exponential backoff, and audit entries on lockout.
-- **Recovery:** if the admin is locked out, they run `docker compose exec pond pond admin reset-password <user>` on the Pi. Physical access to the device is the trust anchor. **Not built yet:** until it is, a forgotten password can't be recovered, and the web app has no way for an admin to reset someone else's.
+- **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi (until M9 builds that command into the image: `pnpm --filter @pond/server pond admin reset-password <user>`). It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
 
 ## Sessions
 
@@ -48,12 +49,21 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 ## Encryption at rest
 
 - **Master key:** 32 random bytes. Default mode stores it in `/data/keys/master.key` with mode 0600, outside the database.
-- **Passphrase mode (optional setting):** the master key is wrapped with a key derived from a passphrase (Argon2id). After each start, Pond stays locked, with no sync and no logins except to unlock, until an admin enters the passphrase.
+- **Whoever has the whole drive has the key,** and so can read everything, including bank connection details and tax IDs. The rest of the database (accounts, transactions) isn't encrypted at all. An optional startup passphrase is planned for later (`future.md`); it has not been built.
 - **Field encryption:** AES-256-GCM with a random nonce per value, stored as `v1:<nonce>:<ciphertext>`. The version prefix allows key rotation later.
 - **Encrypted fields:** `connections.access_url_enc`, `users.totp_secret_enc`, Business SSN and EIN, any API keys. In the UI, SSN and EIN show masked (`•••-••-1234`); the full value needs re-authentication.
 - Full-disk encryption arrives with the prebuilt Pi image (later).
 
 - **LilyPad files:** each file is encrypted with AES-256-GCM (random nonce, version byte), with its pad, Space and file ID authenticated so a moved file won't open. This protects a copy of the files folder on its own; in the default key mode it doesn't protect against theft of the whole drive.
+
+## Backups
+
+- A backup holds all data and the master key, protected only by its passphrase (age, scrypt). It is only as strong as that passphrase.
+- Settings, making a backup and every restore step need an admin and the password re-check. A download is single-use and tied to the session that made it. On a new install, restore needs the console setup code and closes once any account exists.
+- Uploaded backups are untrusted: a strict archive reader, a staging folder, and checksum, integrity, key and version checks all pass before anything is replaced.
+- Backups are written only to the folder mounted for them. No path is ever typed in the app.
+- Safety copies are unencrypted but never leave the data folder, beside the live database and key.
+- The passphrase is never returned, logged or audited. Details: `backup-design.md`.
 
 ## Transport
 

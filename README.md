@@ -19,4 +19,18 @@ pnpm lint && pnpm typecheck
 
 Or with Docker: `docker compose -f docker-compose.dev.yml up`.
 
+## Backups and recovery
+
+Set up backups in Settings → Backups. In Docker, mount the drive or share for backups at `/backups`. When dependencies change, rebuild the development container:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build --renew-anon-volumes
+```
+
+Forgot a password? Run this on the machine Pond runs on (add `--remove-2fa` for a lost phone). With Docker, put `docker compose -f docker-compose.dev.yml exec pond-dev` in front.
+
+```bash
+pnpm --filter @pond/server pond admin reset-password <username>
+```
+
 License: AGPL-3.0 (core); MIT (`packages/sdk` and the LilyPad template).

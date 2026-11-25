@@ -2,7 +2,15 @@ import { randomBytes } from 'node:crypto'
 import type { Express } from 'express'
 import { generateSync } from 'otplib'
 import request from 'supertest'
+import os from 'node:os'
+import path from 'node:path'
 import { createApp } from '../app.js'
+import { createGatedFileStore } from '../backup/fileGate.js'
+import { BackupLock } from '../backup/lock.js'
+import { backupPaths, type BackupPaths } from '../backup/paths.js'
+import { RestoreService } from '../backup/restore.js'
+import { createSafetyCopies } from '../backup/safety.js'
+import { BackupService } from '../backup/service.js'
 import { LoginLimiter } from '../auth/ratelimit.js'
 import { SetupCode } from '../auth/setupCode.js'
 import type { AppContext } from '../context.js'
@@ -11,6 +19,7 @@ import { createEventBus, type EventBus } from '../events.js'
 import { PadHost } from '../lilypads/host.js'
 import { createLogger } from '../logger.js'
 import type { PadModule } from '@pond/sdk'
+import { createFakeBackupDb } from './fakeBackupDb.js'
 import { createFakeFileStore } from './fakeFiles.js'
 import { createFakeRepos } from './fakeRepos.js'
 import { FakeSimpleFin } from './fakeSimpleFin.js'
@@ -27,6 +36,10 @@ export interface TestEnv {
   /** Script what the "bank" returns and inspect what we asked. */
   simplefin: FakeSimpleFin
   app: Express
+  /** How often Pond was asked to restart (to apply a restore). */
+  restarts(): number
+  /** Where backups go. Nothing is created unless a test asks for it. */
+  paths: BackupPaths
   /** Move the injected clock forward. */
   advance(ms: number): void
 }
@@ -36,7 +49,14 @@ export interface TestEnv {
  * advance, predictable ids (`id-1`, `id-2`, ...) and a random throwaway crypto key.
  */
 export function makeEnv(
-  opts: { withSetupCode?: boolean; pads?: PadModule[]; padFailureLimit?: number } = {},
+  opts: {
+    withSetupCode?: boolean
+    pads?: PadModule[]
+    padFailureLimit?: number
+    /** A temporary folder, for tests that make or restore backups. */
+    dataDir?: string
+    backupFolder?: string
+  } = {},
 ): TestEnv {
   let t = Date.parse('2026-01-01T12:00:00Z')
   const clock = () => t
@@ -60,16 +80,51 @@ export function makeEnv(
     strictJson: true, // every call between a pad and Pond must be plain JSON
     failureLimit: opts.padFailureLimit,
   })
+  const paths = backupPaths(
+    opts.dataDir ?? path.join(os.tmpdir(), `pond-unused-${randomBytes(8).toString('hex')}`),
+    opts.backupFolder ?? null,
+  )
+  const crypto = createCrypto(randomBytes(32))
+  const backupDb = createFakeBackupDb()
+  const gate = createGatedFileStore(files)
+  const lock = new BackupLock()
+  let restarts = 0
+  const newId = () => `id-${++idCounter}`
+  const backups = new BackupService({
+    repos,
+    crypto,
+    db: backupDb,
+    paths,
+    gate,
+    lock,
+    now: () => new Date(t),
+    newId,
+    timeZone: 'UTC',
+    pondVersion: '0.0.0',
+    workFactor: 10, // fast: the real strength is tested separately
+  })
+  const restores = new RestoreService({
+    db: backupDb,
+    paths,
+    lock,
+    safety: createSafetyCopies({ db: backupDb, paths, now: () => new Date(t), gate }),
+    newId,
+    maxUploadBytes: 5 * 1024 * 1024,
+    shippedPads: () => new Map(),
+  })
   const ctx: AppContext = {
     repos,
-    crypto: createCrypto(randomBytes(32)),
+    crypto,
     log,
     setupCode: new SetupCode(opts.withSetupCode ?? true),
     limiter: new LoginLimiter({ clock }),
     cookieSecure: false,
     now: () => new Date(t),
-    newId: () => `id-${++idCounter}`,
+    newId,
     events,
+    backups,
+    restores,
+    restart: () => void restarts++,
     padHost,
     simplefin,
     timeZone: 'UTC',
@@ -82,6 +137,8 @@ export function makeEnv(
     files,
     simplefin,
     app: createApp(ctx),
+    paths,
+    restarts: () => restarts,
     advance: (ms) => void (t += ms),
   }
 }

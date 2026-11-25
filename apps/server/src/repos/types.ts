@@ -109,6 +109,8 @@ export interface SessionRepo {
   delete(id: string): void
   /** Deletes all of a user's sessions, optionally keeping one. */
   deleteForUser(userId: string, exceptId?: string): void
+  /** Signs everyone out (after a restore). */
+  deleteAll(): void
 }
 
 export interface SpaceRecord {
