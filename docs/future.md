@@ -47,6 +47,12 @@ v1 gives every new business Space the same list of plain category names with no 
 - **Currency conversion** (v1 leaves other currencies out).
 - **Click a category** in a report to see its transactions.
 
+## Pond website
+A public website that explains what Pond is and what it does. It should include **recommended Raspberry Pi specs**:
+- Recommend an **external SSD instead of an SD card**: SD cards can become unreliable, and Pond writes to its database continuously.
+- Start from "Reference hardware" in `scope-v1.md` (Raspberry Pi 4 with 4 GB or newer, 64-bit OS, SSD over USB), and check it against real measurements on a Pi (for example the memory a backup needs, see `backup-design.md`) before publishing.
+- Say that a good drive doesn't replace backups kept somewhere else.
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.
