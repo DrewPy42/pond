@@ -3,6 +3,7 @@ import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
+import './contrast.css'
 import { pondDark, pondLight } from './theme'
 
 export default createVuetify({
@@ -14,5 +15,8 @@ export default createVuetify({
   },
   defaults: {
     VBtn: { variant: 'flat' },
+    // Vuetify makes buttons in card actions text-only, which draws color="primary" as green text
+    // on white. Keep them filled; quiet buttons such as Cancel say variant="text".
+    VCardActions: { VBtn: { variant: 'flat', slim: false } },
   },
 })
