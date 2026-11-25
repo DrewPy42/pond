@@ -11,6 +11,8 @@ const VERSION = 'v1'
 const KEY_BYTES = 32
 const NONCE_BYTES = 12
 const TAG_BYTES = 16
+/** First byte of an encrypted file, so the format can change later. */
+const FILE_VERSION = 1
 
 export class CryptoError extends Error {}
 
@@ -18,6 +20,12 @@ export interface Crypto {
   encrypt(plaintext: string): string
   decrypt(stored: string): string
   isEncrypted(value: string): boolean
+  /**
+   * For whole files. `context` is authenticated but not stored: decrypting needs the same text, so
+   * a file moved to a different place won't open. Output: version byte, nonce, ciphertext, tag.
+   */
+  encryptBytes(plain: Buffer, context: string): Buffer
+  decryptBytes(stored: Buffer, context: string): Buffer
 }
 
 /** Load the master key, creating it (mode 0600, directory 0700) on first run. */
@@ -41,6 +49,31 @@ export function loadOrCreateMasterKey(keyPath: string): Buffer {
 export function createCrypto(masterKey: Buffer): Crypto {
   if (masterKey.length !== KEY_BYTES) throw new CryptoError('Master key must be 32 bytes')
   return {
+    encryptBytes(plain, context) {
+      const nonce = randomBytes(NONCE_BYTES)
+      const cipher = createCipheriv('aes-256-gcm', masterKey, nonce)
+      cipher.setAAD(Buffer.from(context, 'utf8'))
+      const ct = Buffer.concat([cipher.update(plain), cipher.final()])
+      return Buffer.concat([Buffer.from([FILE_VERSION]), nonce, ct, cipher.getAuthTag()])
+    },
+    decryptBytes(stored, context) {
+      if (stored.length < 1 + NONCE_BYTES + TAG_BYTES || stored[0] !== FILE_VERSION)
+        throw new CryptoError('Unrecognized encrypted file format')
+      const nonce = stored.subarray(1, 1 + NONCE_BYTES)
+      const decipher = createDecipheriv('aes-256-gcm', masterKey, nonce, {
+        authTagLength: TAG_BYTES,
+      })
+      decipher.setAAD(Buffer.from(context, 'utf8'))
+      decipher.setAuthTag(stored.subarray(stored.length - TAG_BYTES))
+      try {
+        return Buffer.concat([
+          decipher.update(stored.subarray(1 + NONCE_BYTES, stored.length - TAG_BYTES)),
+          decipher.final(),
+        ])
+      } catch {
+        throw new CryptoError('Could not decrypt: wrong key, or the file was changed or moved')
+      }
+    },
     encrypt(plaintext) {
       const nonce = randomBytes(NONCE_BYTES)
       const cipher = createCipheriv('aes-256-gcm', masterKey, nonce)

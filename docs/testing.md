@@ -69,7 +69,7 @@ Good examples to copy: `packages/shared/src/money.test.ts` and `apps/server/src/
 
 ## Testing LilyPads
 
-`@pond/sdk/testing` gives pad authors `createTestPad`: the pad runs against an in-memory table store and a fake `core`, with the JSON boundary guard on. `tableStoreContract` is the shared suite that the in-memory and SQLite pad stores both pass, so the fake can't drift. The host has an adversarial fixture pad (`apps/server/src/testing/fixturePad.ts`) used to prove isolation: Space scoping, enablement gates, permission checks and failure auto-disable.
+`@pond/sdk/testing` gives pad authors `createTestPad`: the pad runs against an in-memory table store and a fake `core`, with the JSON boundary guard on. `tableStoreContract` is the shared suite that the in-memory and SQLite pad stores both pass, so the fake can't drift. The host has an adversarial fixture pad (`apps/server/src/testing/fixturePad.ts`) used to prove isolation: Space scoping, enablement gates, permission checks and failure auto-disable. A second pad (`testing/filesPad.ts`) covers uploads, downloads and the password re-check. The real disk file store and the in-memory fake pass the same contract (`files/store.contract.test.ts`).
 
 ## Migration tests
 

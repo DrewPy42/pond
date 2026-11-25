@@ -33,6 +33,20 @@ The original contract was written before any code existed. These changes were ag
 - **Not built yet:** admin UI for global settings (route exists), account-detail panel and report-page extension points (arrive with M7), core write APIs (A5).
 - **Licensing note:** `@pond/sdk` is MIT but imports types from `@pond/shared`, which is part of the AGPL core. Decide before publishing the SDK whether to make those types SDK-owned.
 
+## As built (M6a): files and password re-check
+
+Plugin API **1.1.0** (additive; `^1.0` pads still load).
+
+**Upload routes.** `upload: { maxBytes, types }` on a `post` route (`put` is also allowed, though the web SDK's `api.upload` sends POST). The pad needs `files:store`, can't also declare `body`, and `maxBytes` is at most 25 MB; types are `pdf`, `jpeg`, `png`. The request body is the file (`application/octet-stream`, uncompressed); details go in the query string. Order of checks: sign-in, CSRF, Space role, pad enabled, password re-check if declared, and only then is the body read. The type comes from the file's first bytes. The handler gets `req.file = { id, size, type }`, never the bytes. If the handler throws, or the query is invalid, no file is kept. A handler that succeeds without saving `req.file.id` leaves a file nothing refers to, so always save it.
+
+**Files.** `req.files.download(fileId, filename)` (return it from the route) and `req.files.remove(fileId)`. A file is reachable only from the Space that stored it. Downloads are always attachments, with `nosniff` and `no-store`; the filename is cleaned and given an ending that matches the real type. On disk: `/data/files/<padId>/<spaceId>/<fileId>`, AES-256-GCM with the master key, with the three IDs authenticated.
+
+**Password re-check.** `reauth: true` on a route answers `403 reauth_required` unless the password was entered in the last 5 minutes. Pond's web app shows the password box and retries once; the pad never receives the password. The host audits every successful call (`lilypad.reauth_access`, with the route pattern, never values or parameters; a pad that needs to record *whose* record was opened uses `req.audit`). Responses are `no-store`. It adds to the role check and never replaces it.
+
+**Web.** `usePadHost().api.upload(path, file, query)` and `.download(path, query)`. A sidebar item or page can set `role: 'owner'` to hide it; this is tidiness, and the server route is what enforces access.
+
+**Testing.** `createTestPad` keeps files in memory per Space: `call(..., { file, reauthed })`, `result.download`, and `files()`.
+
 ## Manifest (`lilypad.json`)
 
 ```json
@@ -44,7 +58,7 @@ The original contract was written before any code existed. These changes were ag
   "license": "AGPL-3.0",
   "pondApi": "^1.0",
   "spaceTypes": ["business"],
-  "permissions": ["transactions:read", "transactions:write", "accounts:read", "secrets:use", "files:store"],
+  "permissions": ["transactions:read", "secrets:use", "files:store"],
   "entry": { "server": "dist/server.js", "client": "dist/client.js", "migrations": "migrations/" },
   "settings": "settings.schema.json"
 }

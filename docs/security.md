@@ -50,6 +50,8 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **Encrypted fields:** `connections.access_url_enc`, `users.totp_secret_enc`, Business SSN and EIN, any API keys. In the UI, SSN and EIN show masked (`•••-••-1234`); the full value needs re-authentication.
 - Full-disk encryption arrives with the prebuilt Pi image (later).
 
+- **LilyPad files:** each file is encrypted with AES-256-GCM (random nonce, version byte), with its pad, Space and file ID authenticated so a moved file won't open. This protects a copy of the files folder on its own; in the default key mode it doesn't protect against theft of the whole drive.
+
 ## Transport
 
 - Caddy terminates TLS. In v1 it uses Caddy's internal certificate authority for a hostname like `pond.local`. The setup docs explain how to trust the root certificate on household devices. Plain HTTP redirects to HTTPS.
@@ -61,6 +63,9 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - zod on every input; Drizzle for every query; upload size and type limits; uploaded files stored by UUID, never by user-supplied name.
 - `pnpm audit` in CI; the lockfile is committed; native dependencies limited and approved.
 - pino with a redaction list (passwords, tokens, access URLs, SSN, EIN, cookies). Errors returned to the client never include stack traces.
+
+- **LilyPad uploads and downloads** go through the host, never through pad code: nothing is read until sign-in, CSRF, role and enablement checks pass; compressed bodies are refused; the type is judged from the contents; downloads are attachments with `nosniff` and `no-store` and a cleaned name whose ending matches the content. Files are named by Pond's IDs only.
+- **Password re-check** (5 minutes) guards reveals and other sensitive routes. The dialog belongs to the core web app; LilyPads never receive the password. (LilyPad code runs in the same browser page as core, which is acceptable only because v1 loads official pads alone.)
 
 ## Audit log
 

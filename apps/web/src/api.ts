@@ -1,3 +1,5 @@
+import { filenameFrom } from './composables/padFiles'
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -15,16 +17,49 @@ function csrfToken(): string | undefined {
     ?.slice('pond_csrf='.length)
 }
 
+function csrfHeaders(method: string): Record<string, string> {
+  const csrf = csrfToken()
+  return csrf && method !== 'GET' ? { 'x-csrf-token': decodeURIComponent(csrf) } : {}
+}
+
+async function failure(res: Response): Promise<ApiError> {
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  return new ApiError(res.status, String(data.error ?? 'error'), data)
+}
+
+/** Sends a file as the raw request body (LilyPad upload routes). */
+export async function apiUpload<T = Record<string, unknown>>(path: string, file: Blob): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...csrfHeaders('POST') },
+    credentials: 'same-origin',
+    body: file,
+  })
+  if (!res.ok) throw await failure(res)
+  return (await res.json().catch(() => ({}))) as T
+}
+
+/** Fetches a file and hands it to the browser to save. */
+export async function apiDownload(path: string): Promise<void> {
+  const res = await fetch(path, { credentials: 'same-origin' })
+  if (!res.ok) throw await failure(res)
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filenameFrom(res.headers.get('Content-Disposition'))
+  link.click()
+  // Freed a little later: some browsers start the save after this function returns.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 /** Same-origin JSON fetch. Sends the CSRF token on state-changing requests. */
 export async function api<T = Record<string, unknown>>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   const method = opts.method ?? 'GET'
-  const headers: Record<string, string> = {}
+  const headers = csrfHeaders(method)
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
-  const csrf = csrfToken()
-  if (csrf && method !== 'GET') headers['x-csrf-token'] = decodeURIComponent(csrf)
   const res = await fetch(path, {
     method,
     headers,
@@ -62,6 +97,12 @@ const MESSAGES: Record<string, string> = {
   revoked: 'That connection has been disconnected.',
   synced_account: "This account is filled in by your bank, so transactions can't be added by hand.",
   not_found: "That wasn't found.",
+  reauth_required: 'Enter your password to see this.',
+  file_too_large: 'That file is too big.',
+  file_required: 'Choose a file first.',
+  unsupported_file_type: "That kind of file isn't accepted here.",
+  file_not_saved: "Pond couldn't save the file. Check that the disk has room.",
+  file_unreadable: "Pond couldn't open that file.",
 }
 export const errorMessage = (e: unknown): string => {
   if (!(e instanceof ApiError)) return "Can't reach the Pond server."

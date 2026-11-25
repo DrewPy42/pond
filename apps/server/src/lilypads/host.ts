@@ -4,8 +4,11 @@ import {
   PadError,
   PadPermissionError,
   applyOps,
+  checkUploadSpec,
   collectOps,
   describePermission,
+  detectFileType,
+  isPadDownload,
   satisfiesRange,
   schemaFromMigrations,
   touchesFinances,
@@ -19,18 +22,22 @@ import {
   type RouteHandler,
   type RouteOptions,
   type Schedule,
+  type UploadedFile,
 } from '@pond/sdk'
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { Logger } from 'pino'
 import { recordAudit } from '../audit.js'
 import type { Crypto } from '../crypto/index.js'
 import type { EventBus } from '../events.js'
+import type { FileStore } from '../files/store.js'
 import { sendError } from '../http.js'
 import { LedgerError, type Actor, type Deps } from '../ledger/service.js'
+import { requireRecentReauth } from '../middleware/auth.js'
 import type { createSpaceRouter } from '../middleware/spaceRouter.js'
 import type { Repos } from '../repos/types.js'
 import type { PadListing, PadStateName } from '@pond/shared'
 import { createCoreFacade } from './core.js'
+import { readUpload, sendFile } from './files.js'
 import { guardApi, jsonGuard, PadJsonError } from './json.js'
 import { isDue, validateSchedule } from './schedule.js'
 import { SettingError, describeSettings, getSetting, setSetting } from './settings.js'
@@ -79,6 +86,8 @@ export interface PadHostDeps {
   timeZone: string
   events: EventBus
   source: PadSource
+  /** Where pads' files are kept (encrypted on disk in production). */
+  files: FileStore
   /** Offer pads marked `devOnly` (the template pad). Off in production. */
   includeDevPads?: boolean
   /** Check that every call across the pad boundary is plain JSON. Always on in tests. */
@@ -259,6 +268,16 @@ export class PadHost {
         if (!opts || !['viewer', 'editor', 'owner'].includes(opts.role))
           throw new Error(`Route ${path} must declare a role`)
         const key = `${method} ${path}`
+        if (opts.reauth !== undefined && typeof opts.reauth !== 'boolean')
+          throw new Error(`Route ${path}: reauth must be true or false`)
+        if (opts.upload) {
+          checkUploadSpec(opts.upload)
+          if (!lp.module.manifest.permissions.includes('files:store'))
+            throw new Error(`Route ${path} takes a file but the pad lacks "files:store"`)
+          if (method !== 'post' && method !== 'put')
+            throw new Error(`Route ${path}: upload routes are POST or PUT`)
+          if (opts.body) throw new Error(`Route ${path}: an upload route can't declare a body`)
+        }
         if (lp.routes.has(key)) throw new Error(`Route declared twice: ${key}`)
         lp.routes.set(key, { method, path, opts, handler })
       }
@@ -341,6 +360,16 @@ export class PadHost {
         encrypt: async (t) => (need('secrets:use'), this.d.crypto.encrypt(t)),
         decrypt: async (s) => (need('secrets:use'), this.d.crypto.decrypt(s)),
       },
+      files: {
+        download: async (fileId, filename) => {
+          need('files:store')
+          return { $padDownload: { fileId: String(fileId), filename: String(filename) } }
+        },
+        remove: async (fileId) => {
+          need('files:store')
+          await this.d.files.remove({ padId: id, spaceId: space.id, fileId: String(fileId) })
+        },
+      },
       audit: {
         record: async (e) =>
           recordAudit(
@@ -392,10 +421,14 @@ export class PadHost {
         if (live.tripped) return sendError(res, 503, 'pad_unavailable')
         next()
       }
+      // Order matters: who you are and your role (the Space router), then the pad being on, then
+      // the password re-check, and only then is an uploaded file read.
       sp[route.method](
         fullPath,
         route.opts.role,
         gate,
+        ...(route.opts.reauth ? [requireRecentReauth(this.d.now)] : []),
+        ...(route.opts.upload ? [readUpload(route.opts.upload)] : []),
         (req: Request, res: Response, next: NextFunction) => {
           void this.handle(id, key, req, res).catch(next)
         },
@@ -408,9 +441,13 @@ export class PadHost {
     const route = lp?.routes.get(key)
     if (!lp || !route) return sendError(res, 404, 'not_found')
 
+    if (route.opts.reauth) res.setHeader('Cache-Control', 'no-store')
+    const upload = route.opts.upload
+    // A pad never sees an uploaded file's bytes.
+    const sent: unknown = upload ? undefined : req.body
     const body = route.opts.body
-      ? route.opts.body.safeParse(req.body)
-      : { success: true as const, data: req.body as unknown }
+      ? route.opts.body.safeParse(sent)
+      : { success: true as const, data: sent }
     const query = route.opts.query
       ? route.opts.query.safeParse(req.query)
       : { success: true as const, data: req.query as unknown }
@@ -423,14 +460,32 @@ export class PadHost {
         issues: issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
       })
     }
+    const spaceId = req.space!.id
+    let stored: UploadedFile | null = null
+    if (upload) {
+      const bytes: unknown = req.body
+      if (!Buffer.isBuffer(bytes) || bytes.length === 0) return sendError(res, 400, 'file_required')
+      const type = detectFileType(bytes)
+      if (!type || !upload.types.includes(type)) return sendError(res, 415, 'unsupported_file_type')
+      stored = { id: this.d.newId(), size: bytes.length, type }
+      try {
+        await this.d.files.put({ padId, spaceId, fileId: stored.id }, bytes)
+      } catch (e) {
+        // A full or unwritable disk is not the pad's fault, so it doesn't count against it.
+        this.logFileProblem(padId, e)
+        return sendError(res, 500, 'file_not_saved')
+      }
+    }
+
+    let out: unknown
     try {
       const u = req.auth!.user
       const scope = this.buildScope(lp, {
-        spaceId: req.space!.id,
+        spaceId,
         role: req.space!.role,
         user: { id: u.id, username: u.username, displayName: u.displayName },
       })
-      const out = await route.handler({
+      out = await route.handler({
         ...scope,
         params: Object.fromEntries(
           Object.entries(req.params)
@@ -439,11 +494,59 @@ export class PadHost {
         ),
         query: query.data,
         body: body.data,
+        ...(stored ? { file: stored } : {}),
       })
-      res.json(out === undefined ? {} : out)
     } catch (e) {
-      this.respondToFailure(padId, e, res)
+      // Whatever went wrong, a file nothing refers to must not be left behind.
+      if (stored)
+        await this.d.files
+          .remove({ padId, spaceId, fileId: stored.id })
+          .catch((err: unknown) => this.logFileProblem(padId, err))
+      return this.respondToFailure(padId, e, res)
     }
+
+    let download: { bytes: Buffer; filename: string } | null = null
+    if (isPadDownload(out)) {
+      if (!lp.module.manifest.permissions.includes('files:store'))
+        return sendError(res, 403, 'pad_permission_denied')
+      const { fileId, filename } = out.$padDownload
+      try {
+        const bytes = await this.d.files.get({ padId, spaceId, fileId })
+        if (!bytes) return sendError(res, 404, 'not_found')
+        download = { bytes, filename }
+      } catch (e) {
+        this.logFileProblem(padId, e)
+        return sendError(res, 500, 'file_unreadable')
+      }
+    }
+
+    if (route.opts.reauth) this.auditReauthAccess(req, padId, route)
+    if (download) return sendFile(res, download.bytes, download.filename)
+    res.json(out === undefined ? {} : out)
+  }
+
+  private logFileProblem(padId: string, e: unknown): void {
+    this.d.log.error(
+      { pad: padId, err: { name: (e as Error)?.name, message: (e as Error)?.message } },
+      'LilyPad file could not be read or written',
+    )
+  }
+
+  /** Written by the host, so it happens whether or not the pad remembers to. No values, ever. */
+  private auditReauthAccess(req: Request, padId: string, route: DeclaredRoute): void {
+    recordAudit(
+      this.d.repos.audit,
+      {
+        actorId: req.auth!.user.id,
+        action: 'lilypad.reauth_access',
+        targetType: 'lilypad',
+        targetId: padId,
+        spaceId: req.space!.id,
+        meta: { route: `${route.method.toUpperCase()} ${route.path}` },
+      },
+      this.d.now(),
+      this.d.newId,
+    )
   }
 
   /** Expected errors become their own responses; anything else is a pad bug: counted, logged, a plain 500. */
@@ -583,7 +686,7 @@ export class PadHost {
   }
 
   /** Admin: stop and remove a pad; optionally delete its data (otherwise a later install finds it intact). */
-  uninstall(actor: Actor, padId: string, deleteData: boolean): void {
+  async uninstall(actor: Actor, padId: string, deleteData: boolean): Promise<void> {
     const m = this.module(padId)
     if (!this.d.repos.pads.installs.get(padId)) throw new LedgerError(404, 'not_found')
     const lp = this.loaded.get(padId)
@@ -598,6 +701,9 @@ export class PadHost {
         this.d.repos.settings.deleteByPrefix(`lp.${padId}.`)
       }
     })
+    // After the database has forgotten them: a crash here leaves unreadable leftovers, never rows
+    // that point at files which are gone.
+    if (deleteData) await this.d.files.removePad(padId)
     this.audit(actor, 'lilypad.uninstalled', padId, undefined, { deletedData: deleteData })
   }
 

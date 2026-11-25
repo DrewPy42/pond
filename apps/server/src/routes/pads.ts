@@ -48,8 +48,8 @@ export function padsAdminRouter(ctx: AppContext): Router {
   r.post(
     '/:padId/uninstall',
     validateBody(uninstallBody),
-    asyncHandler((req, res) => {
-      host.uninstall(actor(req), String(req.params.padId), req.body.deleteData)
+    asyncHandler(async (req, res) => {
+      await host.uninstall(actor(req), String(req.params.padId), req.body.deleteData)
       res.json({ ok: true })
     }),
   )

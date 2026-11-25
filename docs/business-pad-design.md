@@ -1,6 +1,6 @@
 # Business Manager and the M6 host additions: proposal for review
 
-**Status: approved 2026-11-24, nothing built yet.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
+**Status: approved 2026-11-24. M6a (host additions) is built; M6b (the pad, including the starter-category change) is not.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
 
 - **M6a: host additions** (files, password re-check for pad routes, owner-only sidebar items).
 - **M6b: the Business Manager pad** (profile, reports, people and pay, documents).

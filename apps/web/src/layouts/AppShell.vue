@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
+import ReauthDialog from '../components/common/ReauthDialog.vue'
 import { coreNav } from '../router'
 import { useAuthStore } from '../stores/auth'
 import { usePadsStore } from '../stores/pads'
@@ -107,6 +108,8 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
       </v-list>
     </v-menu>
   </v-app-bar>
+
+  <ReauthDialog />
 
   <v-main>
     <v-container fluid class="pa-6">
