@@ -40,6 +40,13 @@ v1 gives every new business Space the same list of plain category names with no 
 - **Payroll**: only if there is real demand; it is a large, regulated area.
 - **Tax line presets per tax form** (see "Starter categories per type of business").
 
+## Reports
+- **Export** a core report as CSV.
+- **Account detail page** with its balance history and transactions (and the LilyPad account panel).
+- **All Spaces together**, such as one household net worth.
+- **Currency conversion** (v1 leaves other currencies out).
+- **Click a category** in a report to see its transactions.
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.

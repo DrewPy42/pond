@@ -78,7 +78,7 @@ const row = (
   kind: SplitSumRow['kind'],
   cents: number,
   count = 1,
-): SplitSumRow => ({ categoryId, kind, month: null, cents, count })
+): SplitSumRow => ({ categoryId, kind, month: null, cents, inCents: Math.max(cents, 0), count })
 const rows = [
   row('sales', 'income', 500000),
   row('rent', 'expense', -120000),

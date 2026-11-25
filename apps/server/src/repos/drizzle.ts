@@ -1173,6 +1173,7 @@ export function createDrizzleRepos(
             : 'NULL AS categoryId, NULL AS kind',
           by !== 'category' ? 'substr(t.date, 1, 7) AS month' : 'NULL AS month',
           'sum(s.amount_cents) AS cents',
+          'sum(CASE WHEN s.amount_cents > 0 THEN s.amount_cents ELSE 0 END) AS inCents',
           'count(*) AS count',
         ].join(', ')
         const group = [
@@ -1192,7 +1193,7 @@ export function createDrizzleRepos(
           where += ` AND s.category_id IN (${o.categoryIds.map(() => '?').join(', ')})`
           params.push(...o.categoryIds)
         }
-        const sqlText = `SELECT ${select} FROM splits s JOIN transactions t ON t.id = s.transaction_id LEFT JOIN categories c ON c.id = s.category_id WHERE ${where} GROUP BY ${group} ORDER BY ${group}`
+        const sqlText = `SELECT ${select} FROM splits s JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id JOIN spaces sp ON sp.id = s.space_id AND sp.currency = a.currency LEFT JOIN categories c ON c.id = s.category_id WHERE ${where} GROUP BY ${group} ORDER BY ${group}`
         return (handle.sqlite.prepare(sqlText).all(...params) as SplitSumRow[]).map((r) => ({
           ...r,
         }))

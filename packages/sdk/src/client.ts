@@ -26,7 +26,16 @@ export interface PadWidget {
   title?: string
   component: Component
 }
+/** A report the pad offers, listed under Pond's own Reports as well as inside the pad. */
+export interface PadReportLink {
+  title: string
+  description: string
+  /** The page path that shows it. */
+  path: string
+  role?: Role
+}
 export interface PadClientDefinition {
+  reportPages?: PadReportLink[]
   sidebar?: PadSidebarItem[]
   pages?: PadPage[]
   /** Cards on the core dashboard, shown in Spaces where the pad is enabled. */

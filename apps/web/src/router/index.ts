@@ -47,25 +47,13 @@ const router = createRouter({
       component: () => import('../views/CategoriesView.vue'),
     },
     { path: '/rules', name: 'rules', component: () => import('../views/RulesView.vue') },
+    { path: '/reports', name: 'reports', component: () => import('../views/ReportsView.vue') },
     {
       path: '/p/:padId/:pagePath(.*)*',
       name: 'pad-page',
       component: () => import('../views/PadPageView.vue'),
     },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
-    ...coreNav
-      .filter(
-        (n) =>
-          !['/', '/accounts', '/transactions', '/categories', '/rules', '/settings'].includes(
-            n.path,
-          ),
-      )
-      .map((n) => ({
-        path: n.path,
-        name: n.name,
-        component: () => import('../views/ComingSoonView.vue'),
-        props: { title: n.title },
-      })),
     {
       path: '/setup',
       name: 'setup',

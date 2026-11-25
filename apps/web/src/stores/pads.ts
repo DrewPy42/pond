@@ -36,6 +36,14 @@ export const usePadsStore = defineStore('pads', () => {
         .map((i: PadSidebarItem) => ({ ...i, padId: p.id, to: `/p/${p.id}/${i.path}` })),
     ),
   )
+  /** Reports offered by the apps running here, labeled with the app's name. */
+  const reports = computed(() =>
+    enabled.value.flatMap((p) =>
+      (clientFor(p.id)?.reportPages ?? [])
+        .filter((r) => roleAllows(r.role, spaces.active?.role))
+        .map((r) => ({ ...r, padId: p.id, appName: p.name, to: `/p/${p.id}/${r.path}` })),
+    ),
+  )
   const widgets = computed(() =>
     enabled.value.flatMap((p) =>
       (clientFor(p.id)?.widgets ?? []).map((w: PadWidget) => ({ ...w, padId: p.id, name: p.name })),
@@ -53,5 +61,15 @@ export const usePadsStore = defineStore('pads', () => {
         )
       : undefined
 
-  return { enabled, spaceId, load, isEnabled, sidebar, widgets, transactionPanels, pageFor }
+  return {
+    enabled,
+    spaceId,
+    load,
+    isEnabled,
+    sidebar,
+    reports,
+    widgets,
+    transactionPanels,
+    pageFor,
+  }
 })

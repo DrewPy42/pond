@@ -34,6 +34,10 @@ export const pondLight: ThemeDefinition = {
     link: brand.linkTeal,
     'money-in': '#1B6B2F',
     'money-out': '#B3261E',
+    // Chart series, checked for colour-blind separation. Red and green fail that check, so
+    // charts use blue and orange.
+    'chart-1': '#2A78D6',
+    'chart-2': '#D9622B',
   },
 }
 
@@ -55,5 +59,7 @@ export const pondDark: ThemeDefinition = {
     link: '#7FD6BC',
     'money-in': '#7ED98F',
     'money-out': '#FF9A9A',
+    'chart-1': '#3987E5',
+    'chart-2': '#D95F28',
   },
 }

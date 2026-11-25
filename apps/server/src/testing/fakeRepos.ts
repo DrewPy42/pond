@@ -642,6 +642,8 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
             )
           )
             continue
+          // Different currencies are never added together.
+          if (accounts.get(t.accountId)!.currency !== spaces.get(spaceId)?.currency) continue
           const cat = sp.categoryId ? categories.get(sp.categoryId) : undefined
           if (cat && excluded.includes(cat.kind)) continue
           if (o.categoryIds?.length && !(sp.categoryId && o.categoryIds.includes(sp.categoryId)))
@@ -654,8 +656,10 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
             kind: categoryId ? (cat?.kind ?? null) : null,
             month,
             cents: 0,
+            inCents: 0,
             count: 0,
           }
+          row.inCents += Math.max(sp.amountCents, 0)
           row.cents += sp.amountCents
           row.count += 1
           groups.set(key, row)

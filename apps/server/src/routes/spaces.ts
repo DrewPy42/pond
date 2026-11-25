@@ -10,6 +10,7 @@ import { usernameSchema } from './auth.js'
 import { registerImportRoutes } from './imports.js'
 import { registerPadSpaceRoutes } from './pads.js'
 import { registerLedgerRoutes } from './ledger.js'
+import { registerReportRoutes } from './reports.js'
 import { registerRuleRoutes } from './rules.js'
 import { MissingParentError, type SpaceRecord } from '../repos/types.js'
 
@@ -249,6 +250,7 @@ export function spacesRouter(ctx: AppContext): Router {
   registerLedgerRoutes(ctx, sp)
   registerRuleRoutes(ctx, sp)
   registerImportRoutes(ctx, sp)
+  registerReportRoutes(ctx, sp)
   registerPadSpaceRoutes(ctx, sp)
   ctx.padHost.attachRouter(sp)
 
