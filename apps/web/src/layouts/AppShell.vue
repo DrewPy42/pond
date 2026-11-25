@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import ReauthDialog from '../components/common/ReauthDialog.vue'
+import FirstSpacePrompt from '../components/spaces/FirstSpacePrompt.vue'
 import { coreNav } from '../router'
 import { useAuthStore } from '../stores/auth'
 import { usePadsStore } from '../stores/pads'
@@ -15,6 +16,11 @@ const auth = useAuthStore()
 const spaces = useSpacesStore()
 const pads = usePadsStore()
 const router = useRouter()
+const route = useRoute()
+// Every page but Settings is about a Space, so without one they'd only be empty or broken.
+const needsSpace = computed(
+  () => spaces.loaded && spaces.spaces.length === 0 && route.name !== 'settings',
+)
 onMounted(() => spaces.load())
 // Pads running in the active Space add their sidebar entries, widgets and panels.
 watch(
@@ -113,7 +119,8 @@ const toggleTheme = () => theme.change(isDark() ? 'light' : 'dark')
 
   <v-main>
     <v-container fluid class="pa-6">
-      <router-view />
+      <FirstSpacePrompt v-if="needsSpace" />
+      <router-view v-else :key="spaces.spaces.length ? 'ready' : 'empty'" />
     </v-container>
   </v-main>
 </template>

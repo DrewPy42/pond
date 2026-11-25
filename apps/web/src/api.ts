@@ -97,6 +97,13 @@ const MESSAGES: Record<string, string> = {
   revoked: 'That connection has been disconnected.',
   synced_account: "This account is filled in by your bank, so transactions can't be added by hand.",
   not_found: "That wasn't found.",
+  last_owner: 'Every Space needs an owner. Add another owner first.',
+  last_admin: 'Pond needs at least one administrator who can sign in.',
+  unknown_user: "There's no one with that username who can sign in.",
+  already_member: "They're already in this Space.",
+  space_archived:
+    'Part of this belongs to an archived Space, so it can’t be changed. Restore the Space first.',
+  space_not_empty: 'This Space has records in it, so it can’t be deleted. Archive it instead.',
   reauth_required: 'Enter your password to see this.',
   file_too_large: 'That file is too big.',
   file_required: 'Choose a file first.',

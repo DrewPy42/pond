@@ -256,6 +256,51 @@ describe('Space listing and member management (/api/spaces)', () => {
   })
 
   /**
+   * Function: PUT /api/spaces/:spaceId/members/:userId (the last owner)
+   * Inputs:   alice, Space A's only owner, is made an editor and then a viewer; then "erin" is
+   *           added as a second owner and alice is made an editor
+   * Expected: 409 last_owner twice and her role unchanged; with a second owner the change works
+   */
+  it('never leaves a Space without an owner by changing a role', async () => {
+    const w = await world()
+    const url = (id: string) => `/api/spaces/${w.a}/members/${id}`
+    for (const role of ['editor', 'viewer']) {
+      const r = await w.admin.client.put(url(w.owner.id), { role })
+      expect([r.status, r.body.error]).toEqual([409, 'last_owner'])
+    }
+    expect(w.env.ctx.repos.spaces.getRole(w.a, w.owner.id)).toBe('owner')
+    expect((await w.owner.client.put(url(w.owner.id), { role: 'owner' })).status).toBe(200)
+    await w.owner.client.put(url(w.loner.id), { role: 'owner' })
+    expect((await w.owner.client.put(url(w.owner.id), { role: 'editor' })).status).toBe(200)
+  })
+
+  /**
+   * Function: POST /api/spaces/:spaceId/members (add by username)
+   * Inputs:   alice adds "erin" typed as " Erin "; adds erin again with another role; a name that
+   *           doesn't exist; a disabled user; bob (editor) tries
+   * Expected: 201 and an audit entry; 409 already_member with the role unchanged; 400
+   *           unknown_user for both the missing and the disabled user; 403 for bob
+   */
+  it('lets owners add someone by username without listing users', async () => {
+    const w = await world()
+    const url = `/api/spaces/${w.a}/members`
+    const add = (who: Account, username: string, role = 'viewer') =>
+      who.client.post(url, { username, role })
+    expect((await add(w.editor, 'erin')).status).toBe(403)
+    expect((await add(w.owner, ' Erin ')).status).toBe(201)
+    expect(w.env.ctx.repos.spaces.getRole(w.a, w.loner.id)).toBe('viewer')
+    expect(w.env.ctx.repos.audit.list({ limit: 5 }).map((a) => a.action)).toContain(
+      'space.member_added',
+    )
+    const again = await add(w.owner, 'erin', 'owner')
+    expect([again.status, again.body.error]).toEqual([409, 'already_member'])
+    expect(w.env.ctx.repos.spaces.getRole(w.a, w.loner.id)).toBe('viewer')
+    expect((await add(w.owner, 'nobody')).body.error).toBe('unknown_user')
+    await w.admin.client.patch(`/api/users/${w.outsider.id}`, { status: 'disabled' })
+    expect((await add(w.owner, 'dave')).body.error).toBe('unknown_user')
+  })
+
+  /**
    * Function: DELETE /api/spaces/:spaceId/members/:userId
    * Inputs:   carol (viewer) reads Space A, alice removes her, carol reads again
    * Expected: 200 before removal, 404 after (no stale access)

@@ -22,6 +22,8 @@ const read = (): string | null => {
 export const useSpacesStore = defineStore('spaces', () => {
   const spaces = ref<SpaceSummary[]>([])
   const activeId = ref<string | null>(read())
+  /** True once the list has come back, so "no Spaces" isn't shown while it's still loading. */
+  const loaded = ref(false)
   const active = computed(
     () => spaces.value.find((s) => s.id === activeId.value) ?? spaces.value[0] ?? null,
   )
@@ -30,6 +32,7 @@ export const useSpacesStore = defineStore('spaces', () => {
     spaces.value = (await api<{ spaces: SpaceSummary[] }>('/api/spaces')).spaces
     if (!spaces.value.some((s) => s.id === activeId.value))
       activeId.value = spaces.value[0]?.id ?? null
+    loaded.value = true
   }
   function select(id: string) {
     activeId.value = id
@@ -42,6 +45,7 @@ export const useSpacesStore = defineStore('spaces', () => {
   function reset() {
     spaces.value = []
     activeId.value = null
+    loaded.value = false
   }
-  return { spaces, active, activeId, load, select, reset }
+  return { spaces, active, activeId, loaded, load, select, reset }
 })

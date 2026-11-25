@@ -12,6 +12,7 @@ import type {
   CategoryRecord,
   NewSplit,
   Repos,
+  SplitRecord,
   TransactionWithSplits,
 } from '../repos/types.js'
 import { SplitInvariantError } from '../repos/types.js'
@@ -71,8 +72,20 @@ export function announceTransaction(
 const today = (d: Deps) => d.now().toISOString().slice(0, 10)
 const notFound = () => new LedgerError(404, 'not_found')
 
-/** Admins, owners and editors may change money data in a Space. */
+export const isArchivedSpace = (repos: Repos, spaceId: string): boolean =>
+  !!repos.spaces.findById(spaceId)?.archivedAt
+
+export const hasArchivedSplit = (repos: Repos, splits: { spaceId: string }[]): boolean =>
+  splits.some((s) => isArchivedSpace(repos, s.spaceId))
+
+/** Changes that would alter an archived Space's books are refused until it is restored. */
+function assertNoArchivedSplit(repos: Repos, splits: { spaceId: string }[]): void {
+  if (hasArchivedSplit(repos, splits)) throw new LedgerError(409, 'space_archived')
+}
+
+/** Admins, owners and editors may change money data in a Space that isn't archived. */
 export function canEditSpace(repos: Repos, actor: Actor, spaceId: string): boolean {
+  if (isArchivedSpace(repos, spaceId)) return false
   if (actor.isAdmin) return true
   const role = repos.spaces.getRole(spaceId, actor.id)
   return role === 'owner' || role === 'editor'
@@ -275,9 +288,28 @@ export function seedMissingCategories(d: Deps): number {
  * every Space a split lands in, and a category must belong to the split's own Space.
  * (The sum-to-amount rule is enforced by the repository itself.)
  */
-function buildSplits(d: Deps, actor: Actor, input: SplitInputBody[]): NewSplit[] {
-  return input.map((s) => {
+function buildSplits(
+  d: Deps,
+  actor: Actor,
+  input: SplitInputBody[],
+  existing: SplitRecord[] = [],
+): NewSplit[] {
+  // A part that already sits in an archived Space may be sent back exactly as it was, so the rest
+  // of the transaction can still be edited. Nothing else about it may change.
+  const frozen = existing.filter((s) => isArchivedSpace(d.repos, s.spaceId))
+  const built = input.map((s) => {
     if (!d.repos.spaces.findById(s.spaceId)) throw new LedgerError(400, 'unknown_space')
+    if (isArchivedSpace(d.repos, s.spaceId)) {
+      const i = frozen.findIndex(
+        (f) =>
+          f.spaceId === s.spaceId &&
+          f.categoryId === (s.categoryId ?? null) &&
+          f.amountCents === s.amountCents,
+      )
+      if (i < 0) throw new LedgerError(409, 'space_archived')
+      const [kept] = frozen.splice(i, 1)
+      return { ...kept!, id: d.newId() }
+    }
     if (!canEditSpace(d.repos, actor, s.spaceId)) throw new LedgerError(403, 'forbidden_space')
     if (s.categoryId) {
       const c = d.repos.categories.findById(s.categoryId)
@@ -294,6 +326,8 @@ function buildSplits(d: Deps, actor: Actor, input: SplitInputBody[]): NewSplit[]
       reimbursable: s.reimbursable ?? false,
     }
   })
+  if (frozen.length > 0) throw new LedgerError(409, 'space_archived')
+  return built
 }
 
 function viewOf(found: TransactionWithSplits, spaceId: string): TransactionView {
@@ -374,13 +408,17 @@ export function updateTransaction(
   const amountChanges =
     input.amountCents !== undefined && input.amountCents !== found.txn.amountCents
 
+  // The date and amount are part of what an archived Space recorded.
+  if (amountChanges || (input.date !== undefined && input.date !== found.txn.date))
+    assertNoArchivedSplit(d.repos, found.splits)
+
   if (amountChanges && d.repos.transfers.findByTransaction(txnId)) {
     throw new LedgerError(409, 'linked_transfer') // unlink first; the pair must stay equal and opposite
   }
 
   let splits: NewSplit[] | undefined
   if (splitInput) {
-    splits = buildSplits(d, actor, splitInput)
+    splits = buildSplits(d, actor, splitInput, found.splits)
   } else if (amountChanges) {
     // One split covering the whole amount can follow the new total; more than one is ambiguous.
     if (found.splits.length !== 1) throw new LedgerError(400, 'splits_required')
@@ -409,6 +447,7 @@ export function updateTransaction(
 export function removeTransaction(d: Deps, spaceId: string, txnId: string): void {
   const found = editableTxn(d, spaceId, txnId)
   if (found.txn.source !== 'manual') throw new LedgerError(409, 'not_manual')
+  assertNoArchivedSplit(d.repos, found.splits)
   d.repos.transaction(() => {
     const link = d.repos.transfers.findByTransaction(txnId)
     if (link) d.repos.transfers.delete(link.id)
@@ -455,6 +494,9 @@ export function linkTransfer(d: Deps, actor: Actor, spaceId: string, aId: string
   }
   const a = load(aId)
   const b = load(bId)
+  // Linking takes both transactions out of every Space's income and spending.
+  for (const id of [aId, bId])
+    assertNoArchivedSplit(d.repos, d.repos.transactions.findById(id)!.splits)
   if (a.account.primarySpaceId !== spaceId && b.account.primarySpaceId !== spaceId) throw notFound()
   const problem = checkTransferPair(a, b)
   if (problem) throw new LedgerError(400, 'cannot_link', { problem })
@@ -476,6 +518,8 @@ export function unlinkTransfer(d: Deps, actor: Actor, spaceId: string, txnId: st
   editableTxn(d, spaceId, txnId)
   const link = d.repos.transfers.findByTransaction(txnId)
   if (!link) throw notFound()
+  for (const id of [link.fromTransactionId, link.toTransactionId])
+    assertNoArchivedSplit(d.repos, d.repos.transactions.findById(id)?.splits ?? [])
   // Unlinking changes the other side too, so the actor must be able to edit both accounts.
   for (const id of [link.fromTransactionId, link.toTransactionId]) {
     const side = d.repos.transactions.findById(id)

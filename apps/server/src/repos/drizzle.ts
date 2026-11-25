@@ -307,6 +307,41 @@ export function createDrizzleRepos(
         const r = db.select().from(spaces).where(eq(spaces.id, id)).get()
         return r && toSpace(r)
       },
+      contents(spaceId) {
+        const count = (query: string, ...params: string[]) =>
+          (handle.sqlite.prepare(query).get(...params) as { n: number }).n
+        // Every LilyPad table with a space_id column, found from the database itself, so data
+        // left behind by an uninstalled pad still counts. Names are Pond's own, not input.
+        const padTables = (
+          handle.sqlite
+            .prepare(
+              "SELECT m.name AS name FROM sqlite_master m JOIN pragma_table_info(m.name) c ON c.name = 'space_id' WHERE m.type = 'table' AND m.name LIKE 'lp!_%' ESCAPE '!'",
+            )
+            .all() as { name: string }[]
+        ).map((t) => t.name.replace(/"/g, ''))
+        return {
+          accounts: count('SELECT count(*) AS n FROM accounts WHERE primary_space_id = ?', spaceId),
+          splits: count('SELECT count(*) AS n FROM splits WHERE space_id = ?', spaceId),
+          appRows: padTables.reduce(
+            (sum, name) =>
+              sum + count(`SELECT count(*) AS n FROM "${name}" WHERE space_id = ?`, spaceId),
+            0,
+          ),
+        }
+      },
+      delete(spaceId) {
+        handle.sqlite.transaction(() => {
+          db.delete(lilypadSpaceEnablement).where(eq(lilypadSpaceEnablement.spaceId, spaceId)).run()
+          db.delete(lilypadJobRuns).where(eq(lilypadJobRuns.spaceId, spaceId)).run()
+          db.delete(settings)
+            .where(and(eq(settings.scope, 'space'), eq(settings.scopeId, spaceId)))
+            .run()
+          db.delete(rules).where(eq(rules.spaceId, spaceId)).run()
+          db.delete(categories).where(eq(categories.spaceId, spaceId)).run()
+          db.delete(spaceMembers).where(eq(spaceMembers.spaceId, spaceId)).run()
+          db.delete(spaces).where(eq(spaces.id, spaceId)).run()
+        })()
+      },
       listAll: () => db.select().from(spaces).orderBy(asc(spaces.name)).all().map(toSpace),
       listForUser: (userId) =>
         db

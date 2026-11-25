@@ -21,6 +21,11 @@
 
 **spaces**: `id`, `name`, `type` (personal | business), `currency`, `archived_at?`
 
+**Archiving and deleting a Space** (admin only):
+- **Archived** (`archived_at` set): nothing is deleted. The Space leaves every list; all its routes answer 404; nothing new can be put in it (splits, rules, transfers, assigning bank accounts); its bank accounts aren't synced; LilyPads get no events and run no jobs for it. A part of another Space's transaction that sits in it is frozen: that part can't be removed or changed, and the transaction's date or amount can't change, it can't be deleted, linked or unlinked as a transfer, or rewritten by rules. Other fields stay editable.
+- **Restored:** members and app switches are as they were. Connections with accounts in the Space forget their last sync time, so the next sync looks back as far as a first sync (90 days). **Anything older than that which happened while it was archived is not fetched.**
+- **Deleted:** only when the Space has no accounts (archived ones included), no split of any transaction, and no row in any LilyPad table (including data kept after an uninstall). Its members, categories, rules, app switches and settings go with it. Audit entries stay.
+
 **space_members**: `space_id`, `user_id`, `role` (owner | editor | viewer). Primary key is (`space_id`, `user_id`). Admins don't need rows; they see everything.
 
 ### Money

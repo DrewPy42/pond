@@ -1,3 +1,4 @@
+import { applyOps, collectOps, defineMigration } from '@pond/sdk'
 import { describe, expect, it } from 'vitest'
 import {
   DuplicateError,
@@ -248,6 +249,88 @@ export function repoContract(label: string, make: () => Repos): void {
         archivedAt: '2030-01-01T00:00:00.000Z',
       })
       expect(r.spaces.findById('none')).toBeUndefined()
+    })
+
+    /**
+     * Function: spaces.contents
+     * Inputs:   Space S1 with an account; S2 with only a split from S1's account; S3 with only a
+     *           LilyPad row; S4 with categories, a member, a rule and settings but no records
+     * Expected: each kind of record is counted where it is; S4 reads as empty
+     */
+    it('counts what a Space holds that must not be destroyed', async () => {
+      const r = make()
+      for (const id of ['S1', 'S2', 'S3', 'S4']) r.spaces.create(buildSpace({ id, name: id }))
+      r.accounts.create(buildAccount({ id: 'A1', primarySpaceId: 'S1', currency: 'USD' }))
+      r.transactions.create(buildTransaction({ id: 't1', accountId: 'A1', amountCents: -500 }), [
+        buildSplit({ id: 's1', spaceId: 'S2', amountCents: -500 }),
+      ])
+      const migration = defineMigration('0001', (m) =>
+        m.createTable('notes', { columns: { title: 'text' } }),
+      )
+      const schema = applyOps({}, collectOps(migration))
+      r.padStore.applyOps('kept', collectOps(migration))
+      await r.padStore.table('kept', schema, 'notes', 'S3').insert({ title: 'x' })
+
+      r.users.create(buildUser({ id: 'u1', username: 'ann' }))
+      r.spaces.setMember('S4', 'u1', 'owner')
+      r.categories.create(buildCategory({ id: 'c4', spaceId: 'S4' }))
+      r.settings.set('space', 'S4', 'lp.kept.x', true)
+
+      expect(r.spaces.contents('S1')).toEqual({ accounts: 1, splits: 0, appRows: 0 })
+      expect(r.spaces.contents('S2')).toEqual({ accounts: 0, splits: 1, appRows: 0 })
+      expect(r.spaces.contents('S3')).toEqual({ accounts: 0, splits: 0, appRows: 1 })
+      expect(r.spaces.contents('S4')).toEqual({ accounts: 0, splits: 0, appRows: 0 })
+    })
+
+    /**
+     * Function: spaces.delete
+     * Inputs:   an empty Space with a member, a category, a rule, an app switched on, a job run and
+     *           a setting, next to a second Space with the same kinds of set-up; then a Space that
+     *           still has an account
+     * Expected: the empty Space and all its set-up are gone and the other Space's is untouched;
+     *           deleting the Space with an account fails and removes nothing
+     */
+    it('deletes an empty Space with its set-up, and nothing else', () => {
+      const r = make()
+      r.users.create(buildUser({ id: 'u1', username: 'ann' }))
+      for (const id of ['gone', 'kept']) {
+        r.spaces.create(buildSpace({ id, name: id }))
+        r.spaces.setMember(id, 'u1', 'owner')
+        r.categories.create(buildCategory({ id: `cat-${id}`, spaceId: id }))
+        r.rules.create({
+          id: `rule-${id}`,
+          spaceId: id,
+          name: 'r',
+          priority: 1,
+          enabled: true,
+          conditions: [],
+          actions: [],
+          createdBy: 'u1',
+        })
+        r.pads.enablement.enable('notes', id, 'u1', '2030-01-01T00:00:00.000Z')
+        r.pads.jobRuns.set('notes', 'tidy', id, '2030-01-01T00:00:00.000Z')
+        r.settings.set('space', id, 'lp.notes.x', 1)
+      }
+      r.spaces.delete('gone')
+      expect(r.spaces.findById('gone')).toBeUndefined()
+      expect(r.spaces.getRole('gone', 'u1')).toBeUndefined()
+      expect(r.categories.findById('cat-gone')).toBeUndefined()
+      expect(r.rules.findById('rule-gone')).toBeUndefined()
+      expect(r.pads.enablement.padsForSpace('gone')).toEqual([])
+      expect(r.pads.jobRuns.get('notes', 'tidy', 'gone')).toBeUndefined()
+      expect(r.settings.get('space', 'gone', 'lp.notes.x')).toBeUndefined()
+
+      expect(r.spaces.getRole('kept', 'u1')).toBe('owner')
+      expect(r.categories.findById('cat-kept')).toBeDefined()
+      expect(r.rules.findById('rule-kept')).toBeDefined()
+      expect(r.pads.enablement.padsForSpace('kept')).toEqual(['notes'])
+      expect(r.settings.get('space', 'kept', 'lp.notes.x')).toBe(1)
+
+      r.accounts.create(buildAccount({ id: 'A9', primarySpaceId: 'kept' }))
+      expect(() => r.spaces.delete('kept')).toThrow()
+      expect(r.spaces.findById('kept')).toBeDefined()
+      expect(r.categories.findById('cat-kept')).toBeDefined()
+      expect(r.spaces.getRole('kept', 'u1')).toBe('owner')
     })
 
     /**

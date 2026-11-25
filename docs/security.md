@@ -24,7 +24,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
 - **Rate limiting:** per IP and per username, with exponential backoff, and audit entries on lockout.
-- **Recovery:** if the admin is locked out, they run `docker compose exec pond pond admin reset-password <user>` on the Pi. Physical access to the device is the trust anchor.
+- **Recovery:** if the admin is locked out, they run `docker compose exec pond pond admin reset-password <user>` on the Pi. Physical access to the device is the trust anchor. **Not built yet:** until it is, a forgotten password can't be recovered, and the web app has no way for an admin to reset someone else's.
 
 ## Sessions
 
@@ -39,6 +39,9 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
   - **viewer:** read
   - **editor:** create and edit money data
   - **owner:** also manage members, Space settings and LilyPad enablement
+- A Space always keeps at least one owner: the last one can't be removed or given another role.
+- Only admins archive, restore or delete a Space. An archived Space answers 404 to every Space route (the shared middleware, so core and LilyPad routes alike) for everyone, admins included.
+- Only admins can list users. A Space owner who isn't an admin adds someone by typing their exact username (`POST /api/spaces/:spaceId/members`). This tells an owner whether a username exists, which is accepted on a household install: only owners can ask, each addition is audited, and no user list is exposed.
 - One middleware resolves the Space and role; route handlers declare the minimum role. There is a test for every route that a non-member gets 404 (not 403), so Space existence doesn't leak.
 - Cross-Space split visibility follows `data-model.md`.
 
