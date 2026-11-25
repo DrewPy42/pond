@@ -1,12 +1,12 @@
-# Backups and restore (M8): proposal for review
+# Backups and restore (M8): design
 
-**Status: proposal, nothing built yet.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
+**Status: approved 2026-11-24, nothing built yet.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
 
 A backup holds **everything**: all financial data, the files, and the master key that unlocks the encrypted fields. Restore **replaces** everything. Both need your explicit review.
 
-## Decisions I need from you
+## Decisions (all approved 2026-11-24)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
 | 1 | Split the milestone? | **Yes. M8a:** backup, restore, schedule, folder and download, safety copies, password reset. **M8b:** rclone remotes |
 | 2 | Add the `age-encryption` library? | **Yes** (see "Encryption") |
@@ -115,7 +115,7 @@ It prints a one-time temporary password, signs that user out everywhere and writ
 
 Splitting this off lets M8a protect your data sooner, and gives the rclone security work its own review. rclone stays in v1.
 
-## Security summary (please review)
+## Security summary (reviewed and approved)
 
 | Risk | Defence |
 |---|---|
@@ -125,7 +125,7 @@ Splitting this off lets M8a protect your data sooner, and gives the rclone secur
 | Restore abused on a new install | Setup code from the server console; closed once any account exists |
 | Secrets in logs | Passphrase, rclone settings and key never logged or audited |
 
-**Not protected:** someone who has the Pi itself has the live data and the key (unchanged from today). `security.md` also describes an optional startup passphrase for the master key; it has never been built and has no milestone. I'd move it to "Later" unless you want it.
+**Not protected:** someone who has the Pi itself has the live data and the key (unchanged from today). `security.md` also describes an optional startup passphrase for the master key; it has never been built and has no milestone. Still to be confirmed: whether it moves to "Later".
 
 ## Tests
 
@@ -137,6 +137,6 @@ Splitting this off lets M8a protect your data sooner, and gives the rclone secur
 - **Compatibility:** open our backup with the real `age` and `tar` tools where installed.
 - **Password reset:** the command's effects, and that no web route reaches it.
 
-## Changes to other docs once approved
+## Changes to other docs as M8a is built
 
 `backup-restore.md` (safety copies, new-install restore, staged swap, folder rule, rclone limits), `security.md`, `lilypad-contract.md` (`backup.before`), `scope-v1.md` (M8a and M8b), `decisions.md`.
