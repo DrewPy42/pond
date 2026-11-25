@@ -31,6 +31,9 @@ Requested by the primary user. Contacts, companies, notes and follow-ups, mainly
 - **Edit a goal's name, target or date in the UI** (the route exists; v1 screens only create and delete).
 - **Pad UI helpers in the SDK** (money box, money amount, dialogs) so pads stop copying web components; also lets the pad follow the Space's currency instead of assuming USD.
 
+## Starter categories per type of business
+v1 gives every new business Space the same list of plain category names with no tax lines (`business-pad-design.md`). Later, Pond could ask the business type when the Space is created and offer a list that fits (a nonprofit has donations and grants, for example). Pre-filled tax lines for each tax form are a further step, and would need checking against the forms every year.
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.
