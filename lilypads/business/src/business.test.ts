@@ -40,8 +40,15 @@ function fakeCore(transactions: PadTransaction[] = [], total = transactions.leng
       sum: async (o) => {
         asked.push({ from: o.from, to: o.to })
         return [
-          { categoryId: 'sales', kind: 'income', month: null, cents: 90000, count: 2 },
-          { categoryId: 'meals', kind: 'expense', month: null, cents: -5000, count: 1 },
+          {
+            categoryId: 'sales',
+            kind: 'income',
+            month: null,
+            cents: 90000,
+            inCents: 90000,
+            count: 2,
+          },
+          { categoryId: 'meals', kind: 'expense', month: null, cents: -5000, inCents: 0, count: 1 },
         ]
       },
     },

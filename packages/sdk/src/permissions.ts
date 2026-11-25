@@ -1,5 +1,5 @@
 /** Version of the plugin API this Pond offers. A pad's `pondApi` range must accept it. */
-export const CORE_API_VERSION = '1.2.0'
+export const CORE_API_VERSION = '1.3.0'
 
 export const PERMISSIONS = [
   'transactions:read',

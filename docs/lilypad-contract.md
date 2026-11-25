@@ -55,6 +55,15 @@ Plugin API **1.2.0** (additive).
 - **`usePadHost().isOwner`** lets a pad show owner-only controls. It is for display; the server route's role is what enforces access.
 - **Unique indexes on a per-Space table are unique within a Space.** Before this, they applied across all Spaces, which broke pads used in two Spaces and let a "duplicate" error hint at another Space's data. Both stores and the shared contract now include the Space. (Indexes already created on an existing database keep their old form; the only shipped one, in Personal Finance, includes a category ID that differs between Spaces, so it behaves the same.)
 
+## As built (M7)
+
+Plugin API **1.3.0** (additive).
+
+- **`splits.sum` rows carry `inCents`**, the positive splits alone, so money in and money out can be told apart (out = `cents - inCents`).
+- **`splits.sum` totals only accounts in the Space's own currency.** Before this it added different currencies together.
+- **Report links.** A pad lists reports with `reportPages: [{ title, description, path, role? }]` in `definePadClient`. Pond shows them under core Reports, labeled with the pad's name, linking to the pad's page.
+- **Still not built:** the account-detail panel. Pond has no account detail page yet (`future.md`).
+
 ## Manifest (`lilypad.json`)
 
 ```json

@@ -83,6 +83,14 @@
 
 Pad settings live in the core settings table as `lp.<padId>.<key>`. LilyPad-owned tables are named `lp_<padId>_<table>` and reference core rows by UUID. They use no foreign keys into core tables, so a LilyPad can be removed cleanly.
 
+## Core reports
+
+All three are per Space, readable by viewers, and only ever total accounts in the Space's own currency (others are counted and reported, never converted).
+
+- **Cash flow** (by month): income-kind categories are money in; expense-kind categories are money out, so a refund lowers spending. A split with **no category** counts by its direction, so the report works before anything is categorized (the screen says how many there are). Transfer-kind categories, linked transfers and removed transactions are left out.
+- **Spending by category:** expense categories over a date range, largest first, plus "No category" for uncategorized money going out. Percentages are of spending only; a category where refunds outweigh spending is shown but has no share.
+- **Net worth over time:** at the end of each month (today for the current one), each account's latest `balance_snapshots` row on or before that day, for accounts with `include_in_net_worth` that aren't hidden. Debts are negative balances. An archived account counts until the day it was archived. Months before the first balance are not shown, and a month where some account had no balance yet is marked.
+
 ## Cross-Space visibility
 
 A split can land in a different Space from its account's primary Space. Example: a business lunch on a personal card, split into the WibbitWorks Space.

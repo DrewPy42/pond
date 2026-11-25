@@ -17,6 +17,13 @@ const module: PadClientModule = {
       { path: 'budget', component: BudgetPage },
       { path: 'goals', component: GoalsPage },
     ],
+    reportPages: [
+      {
+        title: 'Budget',
+        description: 'Budgeted, spent and left for each category, month by month.',
+        path: 'budget',
+      },
+    ],
     widgets: [
       { title: 'Budget this month', component: BudgetWidget },
       { title: 'Goals', component: GoalsWidget },

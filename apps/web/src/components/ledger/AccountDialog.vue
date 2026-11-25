@@ -103,6 +103,8 @@ async function save() {
       v-if="!account"
       v-model="form.openingBalanceCents"
       label="Current balance (optional)"
+      hint="Money you owe (a credit card, a loan) is a negative balance."
+      persistent-hint
     />
     <v-switch
       v-model="form.includeInNetWorth"

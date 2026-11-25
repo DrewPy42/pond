@@ -1352,7 +1352,9 @@ export function repoContract(label: string, make: () => Repos): void {
       month: string | null,
       cents: number,
       count: number,
-    ) => ({ categoryId, kind, month, cents, count })
+      /** The positive splits alone; by default the whole amount if it's positive. */
+      inCents = Math.max(cents, 0),
+    ) => ({ categoryId, kind, month, cents, inCents, count })
 
     /**
      * Function: reports.sumSplits(spaceId, { groupBy: "category", from, to })
@@ -1390,7 +1392,7 @@ export function repoContract(label: string, make: () => Repos): void {
         groupBy: 'month',
       })
       expect(byMonth).toEqual([
-        row(null, null, '2030-01', 195800, 4),
+        row(null, null, '2030-01', 195800, 4, 200000),
         row(null, null, '2030-02', -400, 1),
       ])
       const both = r.reports.sumSplits('S1', {
@@ -1440,6 +1442,49 @@ export function repoContract(label: string, make: () => Repos): void {
       expect(
         r.reports.sumSplits('S1', { from: '2031-01-01', to: '2031-01-31', groupBy: 'category' }),
       ).toEqual([])
+    })
+
+    /**
+     * Function: reports.sumSplits (money in)
+     * Inputs:   uncategorized splits of +5000, -700 and -300 in one month
+     * Expected: net 4000 with 5000 of it money in, so money out reads as 1000
+     */
+    it('reports the positive splits on their own', () => {
+      const r = ledgerWorld()
+      for (const [id, cents] of [
+        ['a', 5000],
+        ['b', -700],
+        ['c', -300],
+      ] as const)
+        r.transactions.create(
+          buildTransaction({ id, accountId: 'A1', date: '2030-01-14', amountCents: cents }),
+          [sp(`${id}-s`, 'S1', cents)],
+        )
+      expect(
+        r.reports.sumSplits('S1', { from: '2030-01-01', to: '2030-01-31', groupBy: 'category' }),
+      ).toEqual([row(null, null, null, 4000, 3, 5000)])
+    })
+
+    /**
+     * Function: reports.sumSplits (currencies)
+     * Inputs:   Space S1 (USD) with a -1000 purchase on a USD account and a -9999 purchase on a
+     *           EUR account
+     * Expected: only the USD amount is totalled; euros are never added to dollars
+     */
+    it('never adds different currencies together', () => {
+      const r = ledgerWorld()
+      r.accounts.create(buildAccount({ id: 'EU', primarySpaceId: 'S1', currency: 'EUR' }))
+      for (const [id, account, cents] of [
+        ['u', 'A1', -1000],
+        ['e', 'EU', -9999],
+      ] as const)
+        r.transactions.create(
+          buildTransaction({ id, accountId: account, date: '2030-01-14', amountCents: cents }),
+          [sp(`${id}-s`, 'S1', cents)],
+        )
+      expect(
+        r.reports.sumSplits('S1', { from: '2030-01-01', to: '2030-01-31', groupBy: 'category' }),
+      ).toEqual([row(null, null, null, -1000, 1, 0)])
     })
 
     /**

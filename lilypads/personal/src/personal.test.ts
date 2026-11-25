@@ -41,6 +41,7 @@ const spend = (categoryId: string, cents: number): SplitSumRow => ({
   kind: 'expense',
   month: null,
   cents: -cents,
+  inCents: 0,
   count: 1,
 })
 

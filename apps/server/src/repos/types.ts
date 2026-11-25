@@ -559,6 +559,8 @@ export interface ReportRepo {
    * Totals of splits in one Space by category and/or month, in signed integer cents. Counts only
    * active transactions in the date range, skips transactions linked as transfers, and (by default)
    * categories of kind "transfer". This is the one way to total money for reports and pads.
+   * Only accounts in the Space's own currency count: amounts in different currencies are never
+   * added together.
    */
   sumSplits(spaceId: string, opts: SplitSumOptions): SplitSumRow[]
 }

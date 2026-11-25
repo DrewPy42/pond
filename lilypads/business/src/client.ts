@@ -21,6 +21,13 @@ const module: PadClientModule = {
       { path: 'documents', component: DocumentsPage, role: 'owner' },
       { path: 'profile', component: ProfilePage, role: 'owner' },
     ],
+    reportPages: [
+      {
+        title: 'Profit and loss and tax summary',
+        description: 'By tax year or any dates, with an export for your accountant.',
+        path: 'reports',
+      },
+    ],
     widgets: [{ title: 'This tax year', component: BusinessWidget }],
   }),
 }

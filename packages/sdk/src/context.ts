@@ -23,6 +23,8 @@ export interface SplitSumRow {
   month: string | null
   /** Signed integer cents: positive = money in. */
   cents: number
+  /** The positive splits alone, so money in and money out can be told apart: out = cents - inCents. */
+  inCents: number
   count: number
 }
 export interface SplitSumOptions {
