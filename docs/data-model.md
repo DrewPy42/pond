@@ -48,7 +48,7 @@
 - Reports, budgets and LilyPads read splits.
 
 **categories**: `id`, `space_id`, `parent_id?`, `name`, `kind` (income | expense | transfer), `tax_line?`, `sort_order`, `archived_at?`
-- New business Spaces are seeded with the Schedule C list from business_manager (with `tax_line`). New personal Spaces get a short starter list.
+- New business and personal Spaces get a starter list of category names, with no tax lines (a business's tax forms depend on what kind of business it is; see `business-pad-design.md`). People can add tax lines themselves.
 
 **transfer_links**: `id`, `from_transaction_id`, `to_transaction_id`, `created_by` (user | rule | auto)
 - Linked transactions count as transfers in reports, not as spending or income.
@@ -100,8 +100,10 @@ They can never open the account, its other transactions or its balance.
 |---|---|
 | `businesses` | `spaces` (type business) + `lp_business_profile` (entity type, EIN encrypted, fiscal year start, address) |
 | `accounts` | core `accounts` |
-| `categories` (Schedule C seeds) | core `categories`, seeded for business Spaces |
+| `categories` (Schedule C seeds) | core `categories`; business Spaces get the names without the Schedule C lines |
 | `transactions` (positive amount + income/expense type) | core `transactions` + `splits`, signed cents |
 | `statement_imports` / `statement_lines` | core `import_batches` + review flow (CSV in v1) |
 | `people`, `salary_records` | `lp_business_people`, `lp_business_salary_records` (SSN encrypted, masked) |
 | `documents` | `lp_business_documents`, files under `/data/files` |
+
+The Business pad's tables: `lp_business_profile` (one per Space), `lp_business_deductions` (categories only partly counted), `lp_business_people`, `lp_business_pay_records` and `lp_business_documents`. They start empty, and nothing is migrated from business_manager.

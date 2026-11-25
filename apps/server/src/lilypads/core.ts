@@ -1,5 +1,11 @@
-import { PadError, PadPermissionError, type ScopedCore, type SplitSumOptions } from '@pond/sdk'
-import { isoDateSchema } from '@pond/shared'
+import {
+  PadError,
+  PadPermissionError,
+  type PadTransaction,
+  type ScopedCore,
+  type SplitSumOptions,
+} from '@pond/sdk'
+import { isoDateSchema, type TransactionView } from '@pond/shared'
 import {
   LedgerError,
   listAccounts,
@@ -30,6 +36,11 @@ export function createCoreFacade(
     throw e
   }
 
+  const forPad = (t: TransactionView): PadTransaction => ({
+    ...t,
+    linkedTransfer: !!deps.repos.transfers.findByTransaction(t.id),
+  })
+
   return {
     accounts: {
       async list() {
@@ -55,12 +66,12 @@ export function createCoreFacade(
           to: opts?.to,
           q: opts?.q,
         })
-        return { transactions, total }
+        return { transactions: transactions.map(forPad), total }
       },
       async get(id) {
         need('transactions:read')
         try {
-          return getTransaction(deps, spaceId, id).transaction
+          return forPad(getTransaction(deps, spaceId, id).transaction)
         } catch (e) {
           if (e instanceof LedgerError && e.status === 404) return null
           throw e

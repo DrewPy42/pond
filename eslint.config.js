@@ -45,7 +45,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/web/**/*.{ts,vue}'],
+    files: ['apps/web/**/*.{ts,vue}', 'lilypads/**/*.{ts,vue}'],
     languageOptions: { globals: globals.browser },
   },
   {

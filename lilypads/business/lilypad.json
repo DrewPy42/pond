@@ -1,0 +1,12 @@
+{
+  "id": "business",
+  "name": "Business Manager",
+  "version": "1.0.0",
+  "author": "WibbitWorks",
+  "license": "AGPL-3.0-only",
+  "description": "Profit and loss and a tax summary for your accountant, people and pay records, and business documents.",
+  "pondApi": "^1.2",
+  "spaceTypes": ["business"],
+  "permissions": ["transactions:read", "secrets:use", "files:store"],
+  "settings": []
+}

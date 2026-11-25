@@ -9,6 +9,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/sdk/package.json packages/sdk/
 COPY lilypads/template/package.json lilypads/template/
 COPY lilypads/personal/package.json lilypads/personal/
+COPY lilypads/business/package.json lilypads/business/
 RUN pnpm install --frozen-lockfile
 COPY . .
 EXPOSE 3210 5173

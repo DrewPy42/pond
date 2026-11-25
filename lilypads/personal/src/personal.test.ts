@@ -1,5 +1,5 @@
-import type { ScopedCore, SplitSumRow } from '@pond/sdk'
-import type { CategoryView, TransactionView } from '@pond/shared'
+import type { PadTransaction, ScopedCore, SplitSumRow } from '@pond/sdk'
+import type { CategoryView } from '@pond/shared'
 import { createTestPad } from '@pond/sdk/testing'
 import { describe, expect, it } from 'vitest'
 import { padModule } from './index'
@@ -221,7 +221,7 @@ describe('Personal Finance pad: budgets', () => {
       id: 'tx-1',
       date: '2030-06-12',
       splits: [{ categoryId: 'groceries' }, { categoryId: 'dining' }, { categoryId: null }],
-    } as unknown as TransactionView
+    } as unknown as PadTransaction
     const { core } = fakeCore([spend('groceries', 25000)], {
       transactions: {
         list: async () => ({ transactions: [], total: 0 }),

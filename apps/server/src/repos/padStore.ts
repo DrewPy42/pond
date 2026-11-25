@@ -72,6 +72,14 @@ export function createSqlitePadStore(
   }
   const isUnique = (e: unknown) => String((e as Error)?.message).includes('UNIQUE constraint')
 
+  /** On a Space table, "unique" means unique within one Space, so the Space is part of the index. */
+  const indexColumns = (cols: string[], unique: boolean, perSpace: boolean): string =>
+    [...(unique && perSpace ? ['space_id'] : []), ...cols].map(q).join(', ')
+  const hasSpaceColumn = (padId: string, table: string): boolean =>
+    !!sqlite
+      .prepare("SELECT 1 FROM pragma_table_info(?) WHERE name = 'space_id'")
+      .get(physicalTableName(padId, table))
+
   const ddl = (padId: string, op: SchemaOp): string[] => {
     const table = physical(padId, op.table)
     const indexName = (cols: string[], unique: boolean) =>
@@ -91,7 +99,7 @@ export function createSqlitePadStore(
         stmts.push(`CREATE INDEX ${indexName(['space_id'], false)} ON ${table} ("space_id")`)
       for (const i of op.indexes)
         stmts.push(
-          `CREATE ${i.unique ? 'UNIQUE ' : ''}INDEX ${indexName(i.columns, i.unique)} ON ${table} (${i.columns.map(q).join(', ')})`,
+          `CREATE ${i.unique ? 'UNIQUE ' : ''}INDEX ${indexName(i.columns, i.unique)} ON ${table} (${indexColumns(i.columns, i.unique, op.scope === 'space')})`,
         )
       return stmts
     }
@@ -103,7 +111,7 @@ export function createSqlitePadStore(
       ]
     }
     return [
-      `CREATE ${op.unique ? 'UNIQUE ' : ''}INDEX ${indexName(op.columns, op.unique)} ON ${table} (${op.columns.map(q).join(', ')})`,
+      `CREATE ${op.unique ? 'UNIQUE ' : ''}INDEX ${indexName(op.columns, op.unique)} ON ${table} (${indexColumns(op.columns, op.unique, hasSpaceColumn(padId, op.table))})`,
     ]
   }
 
