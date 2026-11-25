@@ -47,6 +47,12 @@ v1 gives every new business Space the same list of plain category names with no 
 - **Currency conversion** (v1 leaves other currencies out).
 - **Click a category** in a report to see its transactions.
 
+## Startup passphrase (locking the master key)
+Not in v1 (decided 2026-11-25). The idea: wrap the master key with a key made from a passphrase (Argon2id). After each start Pond stays locked, allowing nothing but unlocking, until an admin enters it. This needs its own design first:
+- After any restart, including a power cut, there is **no bank sync and no scheduled backup** until someone unlocks it, so people need a clear way to find out it is locked.
+- It protects the encrypted fields and files only. Accounts and transactions in the database aren't encrypted, so protecting a stolen drive fully needs disk encryption (see the Pi image).
+- Decide what happens with a forgotten passphrase, and how backup, restore (including onto a new install), safety copies and the password reset command work with a wrapped key.
+
 ## Pond website
 A public website that explains what Pond is and what it does. It should include **recommended Raspberry Pi specs**:
 - Recommend an **external SSD instead of an SD card**: SD cards can become unreliable, and Pond writes to its database continuously.

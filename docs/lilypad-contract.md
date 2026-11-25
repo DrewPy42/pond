@@ -126,7 +126,7 @@ The admin sees and approves the list at install. A pad update that requests new 
 
 ## Events (v1)
 
-`sync.completed`, `account.added`, `transaction.created`, `transaction.updated`, `split.changed`, `space.created`, `backup.before`.
+`sync.completed`, `account.added`, `transaction.created`, `transaction.updated`, `split.changed`, `space.created`.
 
 Payloads carry IDs and minimal fields. Pads fetch details through `ctx.core`, so permission checks apply.
 
@@ -148,13 +148,13 @@ The client entry exports Vue components registered against these points. Use the
 ## Lifecycle
 
 1. **Install** (admin only): the admin reviews the manifest and approves permissions.
-2. **Migrate:** Pond takes a backup, then runs the pad's migrations, which are recorded in `lilypad_migrations`.
+2. **Migrate:** Pond takes a safety copy of the database (and doesn't go ahead if it can't), then runs the pad's migrations, which are recorded in `lilypad_migrations`.
 3. **Enable:** Space owners turn the pad on for their Space (only allowed Space types are offered).
 4. **Update:** the same backup-then-migrate path. New permissions require re-approval.
 5. **Disable:** hidden per Space or globally; data is kept.
 6. **Uninstall:** the admin chooses to keep the pad's data (`lp_<id>_*` tables and files) or delete it.
 
-Pad tables and pad versions are included in backups.
+Pad tables, files and applied migrations are included in backups. Pond copies them itself, so a pad does nothing. A column holding a value encrypted with `ctx.secrets` **must** have a name ending in `_enc`: backup and restore use that to check the key opens it.
 
 ## Official LilyPads in v1
 

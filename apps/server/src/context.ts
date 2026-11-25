@@ -6,6 +6,8 @@ import type { SpaceRouteInfo } from './middleware/spaceRouter.js'
 import type { Repos } from './repos/types.js'
 import type { EventBus } from './events.js'
 import type { PadHost } from './lilypads/host.js'
+import type { RestoreService } from './backup/restore.js'
+import type { BackupService } from './backup/service.js'
 import type { SimpleFinClient } from './simplefin/types.js'
 
 export interface AppContext {
@@ -28,6 +30,12 @@ export interface AppContext {
   timeZone: string
   /** Generates primary keys (UUIDv7 in production, predictable in tests). */
   newId: () => string
+  /** Making backups, on request and on a schedule. */
+  backups: BackupService
+  /** Receiving and checking a backup to restore (docs/backup-design.md). */
+  restores: RestoreService
+  /** Stops Pond so a confirmed restore is applied at the next start. */
+  restart: () => void
   /** Filled in as Space-scoped routes are declared; used by the permission tests. */
   spaceRoutes: SpaceRouteInfo[]
 }

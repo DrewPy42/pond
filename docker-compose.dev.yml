@@ -7,6 +7,11 @@ services:
     environment:
       POND_DATA_DIR: /data
       LOG_LEVEL: debug
+      # Backups may only be written to the folder mounted at /backups.
+      POND_BACKUP_DIR: /backups
+    # Pond stops itself to apply a restore. With live reload the dev server may stay stopped
+    # until you run `docker compose -f docker-compose.dev.yml restart`.
+    restart: unless-stopped
     ports:
       - '3210:3210'
       - '5173:5173'
@@ -14,5 +19,9 @@ services:
       - .:/workspace
       - /workspace/node_modules
       - pond-dev-data:/data
+      # For real backups, mount a NAS share or USB drive here instead, for example:
+      #   - /mnt/usb-drive/pond:/backups
+      - pond-dev-backups:/backups
 volumes:
   pond-dev-data:
+  pond-dev-backups:

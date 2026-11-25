@@ -92,6 +92,8 @@ export interface PadHostDeps {
   includeDevPads?: boolean
   /** Check that every call across the pad boundary is plain JSON. Always on in tests. */
   strictJson?: boolean
+  /** Takes a safety copy before a pad's migrations run. If it fails, they don't run. */
+  beforeMigrate?: () => Promise<unknown>
   /** Failures before a pad is switched off. */
   failureLimit?: number
 }
@@ -218,7 +220,7 @@ export class PadHost {
         return lp
       }
       lp.schema = schemaFromMigrations(m.migrations)
-      this.migrate(m)
+      await this.migrate(m)
       if (install.version !== m.manifest.version)
         this.d.repos.pads.installs.upsert({ ...install, version: m.manifest.version })
 
@@ -238,7 +240,7 @@ export class PadHost {
   }
 
   /** Runs pending migrations, each in one transaction with its record. Forward-only. */
-  private migrate(m: PadModule): void {
+  private async migrate(m: PadModule): Promise<void> {
     const id = m.manifest.id
     const applied = new Set(this.d.repos.pads.migrations.applied(id))
     const known = new Set(m.migrations.map((x) => x.name))
@@ -247,6 +249,7 @@ export class PadHost {
         throw new Error(
           `Migration "${name}" was applied but this version of the pad no longer has it`,
         )
+    if (m.migrations.some((x) => !applied.has(x.name))) await this.d.beforeMigrate?.()
     for (const mig of m.migrations) {
       if (applied.has(mig.name)) continue
       const ops = collectOps(mig)

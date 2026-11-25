@@ -5,7 +5,7 @@ import path from 'node:path'
 /**
  * Field encryption for secrets at rest (security.md): AES-256-GCM, random 96-bit nonce per
  * value, stored as `v1:<nonce>:<ciphertext+tag>` (base64url). The version prefix allows key
- * rotation later. Passphrase-wrapped master key is a later feature.
+ * rotation later. Passphrase-wrapped master key is a later feature (docs/future.md).
  */
 const VERSION = 'v1'
 const KEY_BYTES = 32

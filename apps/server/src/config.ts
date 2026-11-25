@@ -15,6 +15,10 @@ const envSchema = z.object({
   POND_SYNC_INTERVAL_HOURS: z.coerce.number().optional(),
   /** Offer the template LilyPad (development only). */
   POND_DEV_PADS: z.enum(['true', 'false']).optional(),
+  /** The one folder backups may be written to (a NAS share or USB drive mounted by Docker). */
+  POND_BACKUP_DIR: z.string().optional(),
+  /** Largest backup file a restore accepts, in MB. */
+  POND_RESTORE_MAX_MB: z.coerce.number().int().min(1).max(1_000_000).default(2048),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
 
@@ -38,5 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     dbPath: path.join(dataDir, 'pond.db'),
     filesDir: path.join(dataDir, 'files'),
     keyPath: path.join(dataDir, 'keys', 'master.key'),
+    backupDir: e.POND_BACKUP_DIR ? path.resolve(e.POND_BACKUP_DIR) : null,
+    restoreMaxBytes: e.POND_RESTORE_MAX_MB * 1024 * 1024,
   }
 }

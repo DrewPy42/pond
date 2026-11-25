@@ -34,6 +34,19 @@ export function runMigrations(handle: DbHandle, dir = MIGRATIONS_DIR): void {
   migrate(handle.db, { migrationsFolder: dir })
 }
 
+interface JournalEntry {
+  idx: number
+  tag: string
+}
+
+export function readJournal(dir = MIGRATIONS_DIR): JournalEntry[] {
+  const raw = fs.readFileSync(path.join(dir, 'meta', '_journal.json'), 'utf8')
+  return (JSON.parse(raw) as { entries: JournalEntry[] }).entries
+}
+
+/** Number of migrations that ship today. Each one is one "schema version". */
+export const latestSchemaVersion = (): number => readJournal().length
+
 /** Number of applied migrations, reported by /api/health as the schema version. */
 export function schemaVersion(handle: DbHandle): number {
   const row = handle.sqlite

@@ -229,6 +229,22 @@ export function repoContract(label: string, make: () => Repos): void {
       r.sessions.deleteForUser('u1')
       expect(r.sessions.findWithUser('s2')).toBeUndefined()
     })
+
+    /**
+     * Function: sessions.deleteAll()
+     * Inputs:   sessions s1 (user "u1") and s2 (user "u2")
+     * Expected: both are gone; a restore signs everyone out
+     */
+    it('deletes every session at once', () => {
+      const r = make()
+      r.users.create(buildUser({ id: 'u1', username: 'ann' }))
+      r.users.create(buildUser({ id: 'u2', username: 'bob' }))
+      r.sessions.create(base('s1', 'u1'))
+      r.sessions.create(base('s2', 'u2'))
+      r.sessions.deleteAll()
+      expect(r.sessions.findWithUser('s1')).toBeUndefined()
+      expect(r.sessions.findWithUser('s2')).toBeUndefined()
+    })
   })
 
   describe(`${label}: SpaceRepo`, () => {

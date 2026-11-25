@@ -27,6 +27,7 @@
 - Investments LilyPad (holdings); brokerage balances still sync and count toward net worth in v1
 - PDF statement import
 - Passkeys (need HTTPS on a real hostname)
+- Optional startup passphrase that locks the master key (notes in `future.md`)
 - Community verified and unverified LilyPads, isolation runtime, signing, submission process
 - LilyPad dependencies on other LilyPads
 - Built-in Google Drive, Dropbox, Box backup buttons
@@ -53,7 +54,8 @@ Each milestone ends with working, tested software.
 | M5 | LilyPad host | SDK, manifest loading, `ctx`, permissions, events, UI extension points; Personal Finance pad |
 | M6 | Business pad | Port business_manager: profile, Schedule C reports, people and salary (SSN masked + reveal), documents |
 | M7 | Reports | Cash flow, spending by category, net worth over time, LilyPad reports listed in core Reports |
-| M8 | Backups | Backup format, schedule, destinations, retention, full-overwrite restore |
+| M8a | Backups | Backup format, schedule, download and folder, retention, safety copies, full-overwrite restore (also on a new install), password reset command |
+| M8b | Backup remotes | rclone destinations, with allow-listed remote types and settings |
 | M9 | Ship | Production Docker images (arm64 + amd64), Caddy config, install docs, update-available notice |
 
 ## Open items to settle during the build

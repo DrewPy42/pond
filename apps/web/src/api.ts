@@ -28,10 +28,18 @@ async function failure(res: Response): Promise<ApiError> {
 }
 
 /** Sends a file as the raw request body (LilyPad upload routes). */
-export async function apiUpload<T = Record<string, unknown>>(path: string, file: Blob): Promise<T> {
+export async function apiUpload<T = Record<string, unknown>>(
+  path: string,
+  file: Blob,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream', ...csrfHeaders('POST') },
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      ...csrfHeaders('POST'),
+      ...extraHeaders,
+    },
     credentials: 'same-origin',
     body: file,
   })
@@ -55,10 +63,10 @@ export async function apiDownload(path: string): Promise<void> {
 /** Same-origin JSON fetch. Sends the CSRF token on state-changing requests. */
 export async function api<T = Record<string, unknown>>(
   path: string,
-  opts: { method?: string; body?: unknown } = {},
+  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {
   const method = opts.method ?? 'GET'
-  const headers = csrfHeaders(method)
+  const headers = { ...csrfHeaders(method), ...opts.headers }
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   const res = await fetch(path, {
     method,
@@ -110,6 +118,8 @@ const MESSAGES: Record<string, string> = {
   unsupported_file_type: "That kind of file isn't accepted here.",
   file_not_saved: "Pond couldn't save the file. Check that the disk has room.",
   file_unreadable: "Pond couldn't open that file.",
+  not_enough_space: "There isn't enough free space.",
+  backup_failed: "The backup didn't finish. Nothing was saved.",
 }
 export const errorMessage = (e: unknown): string => {
   if (!(e instanceof ApiError)) return "Can't reach the Pond server."

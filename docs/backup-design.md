@@ -1,6 +1,6 @@
 # Backups and restore (M8): design
 
-**Status: approved 2026-11-24, nothing built yet.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
+**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end); M8b is not.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
 
 A backup holds **everything**: all financial data, the files, and the master key that unlocks the encrypted fields. Restore **replaces** everything. Both need your explicit review.
 
@@ -125,7 +125,7 @@ Splitting this off lets M8a protect your data sooner, and gives the rclone secur
 | Restore abused on a new install | Setup code from the server console; closed once any account exists |
 | Secrets in logs | Passphrase, rclone settings and key never logged or audited |
 
-**Not protected:** someone who has the Pi itself has the live data and the key (unchanged from today). `security.md` also describes an optional startup passphrase for the master key; it has never been built and has no milestone. Still to be confirmed: whether it moves to "Later".
+**Not protected:** someone who has the Pi itself has the live data and the key (unchanged from today). An optional startup passphrase for the master key was once described in `security.md`; it has never been built. **Decided 2026-11-25: it moves to "Later"** (`future.md`).
 
 ## Tests
 
@@ -140,3 +140,22 @@ Splitting this off lets M8a protect your data sooner, and gives the rclone secur
 ## Changes to other docs as M8a is built
 
 `backup-restore.md` (safety copies, new-install restore, staged swap, folder rule, rclone limits), `security.md`, `lilypad-contract.md` (`backup.before`), `scope-v1.md` (M8a and M8b), `decisions.md`.
+
+## As built (M8a)
+
+Where the build adds to or differs from the text above:
+
+- **A new backup gets restore's database checks** (integrity, and the key opens every encrypted value) before it is written, then is read back and checksummed. A backup that restore would refuse is reported as failed.
+- **Encrypted values** are found by name: every column ending in `_enc`, core's or a LilyPad's, plus the stored backup passphrase. A LilyPad that encrypts a value must name its column that way.
+- **Uploaded files** stay encrypted with the master key inside the archive. `age` and `tar` open a backup without Pond, but reading those files also needs the key and Pond's file format (`security.md`).
+- **One bad file doesn't block a restore.** If some uploaded files can't be opened, restore warns and says how many. If none can, it is refused as a wrong key. Otherwise one damaged file would make every later backup impossible to restore.
+- **Files aren't copied first.** While deletions are held back, they are read straight from the files folder (they are never edited in place).
+- **Stale warning:** 3 days for a daily schedule, **10 for weekly** (3 would always warn on a weekly one).
+- **Migrations are tried during the check,** on a throwaway copy of the restored database (core migrations only). If the real ones still fail at start-up, the old data is put back.
+- **One safety copy covers all migrations in one start.** Installing or updating an app later takes its own. Removing an app and its data is not a migration and takes none.
+- **Download:** the finished file is fetched once, by the session that made it, with no second password prompt (a large backup can outlast the 5-minute window). It expires after 15 minutes, or when another download is made.
+- **Memory limit:** Pond refuses a file whose header asks for a work factor above 20 (about 1 GB).
+- **Work factor:** 18, age's default. **Not yet measured on a Pi.** The library derives the key without yielding, so the server pauses while it does (twice per backup: writing and checking). On the development Mac one derivation took about 0.45 s.
+- **Restart in development:** the compose file has a restart policy, but the live-reload runner may leave the server stopped. Restarting the container applies the restore.
+- **Password reset** prints a temporary password but does not force a change at the next sign-in. Before M9: `pnpm --filter @pond/server pond admin reset-password <username>`.
+- **Compatibility test:** the real-`tar` check always runs. The real-`age` check needs `age` and `expect` and is skipped where either is missing.

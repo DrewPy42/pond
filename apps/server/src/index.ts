@@ -1,9 +1,16 @@
-import { createApp } from './app.js'
+import { createApp, VERSION } from './app.js'
+import { DEFAULT_WORK_FACTOR } from './backup/archive.js'
+import { bootDatabase, finishRestore } from './backup/boot.js'
+import { createGatedFileStore } from './backup/fileGate.js'
+import { BackupLock } from './backup/lock.js'
+import { backupPaths } from './backup/paths.js'
+import { RestoreService } from './backup/restore.js'
+import { createSafetyCopies } from './backup/safety.js'
+import { BackupService } from './backup/service.js'
 import { LoginLimiter } from './auth/ratelimit.js'
 import { SetupCode } from './auth/setupCode.js'
 import { loadConfig } from './config.js'
 import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
-import { openDb, runMigrations } from './db/index.js'
 import { newId } from './db/ids.js'
 import { seedMissingCategories } from './ledger/service.js'
 import { createDiskFileStore } from './files/store.js'
@@ -14,16 +21,33 @@ import { createLogger } from './logger.js'
 import { createHttpSimpleFinClient } from './simplefin/client.js'
 import { clampIntervalHours, startSyncScheduler } from './sync/scheduler.js'
 import { syncAll } from './sync/service.js'
+import { createSqliteBackupDb } from './repos/backupDb.js'
 import { createDrizzleRepos } from './repos/drizzle.js'
 
 const config = loadConfig()
 const log = createLogger(config.logLevel)
 
-const crypto = createCrypto(loadOrCreateMasterKey(config.keyPath))
-const db = openDb(config.dbPath)
-runMigrations(db)
+const now = () => new Date()
+const paths = backupPaths(config.dataDir, config.backupDir)
 
+// First: a waiting restore replaces the database, key and files before anything opens them.
+const booted = await bootDatabase(paths, now)
+const db = booted.db
+if (booted.restore.kind === 'rolled_back')
+  log.error('The restore could not be applied. Pond is running with the data it had before.')
+
+const crypto = createCrypto(loadOrCreateMasterKey(config.keyPath))
 const repos = createDrizzleRepos(db)
+finishRestore(booted.restore, { repos, paths, now, newId })
+if (booted.restore.kind === 'swapped')
+  log.info('A backup was restored. Everyone must sign in again.')
+
+const backupDb = createSqliteBackupDb(db)
+const files = createGatedFileStore(createDiskFileStore(config.filesDir, crypto))
+const safety = createSafetyCopies({ db: backupDb, paths, now, gate: files })
+// One safety copy covers all of a start's migrations; installing an app later takes its own.
+let starting = true
+let startCopyTaken = booted.safetyCopyTaken
 seedMissingCategories({ repos, newId, now: () => new Date() }) // Spaces from before categories existed
 const setupCode = new SetupCode(repos.users.count() === 0)
 if (setupCode.active) {
@@ -50,11 +74,50 @@ const padHost = new PadHost({
   timeZone: config.timeZone,
   events,
   source: registrySource,
-  files: createDiskFileStore(config.filesDir, crypto),
+  files,
   includeDevPads: config.devPads,
+  beforeMigrate: async () => {
+    if (starting && startCopyTaken) return
+    await safety.beforeMigration()
+    startCopyTaken = true
+  },
 })
 
 await padHost.start() // loads installed pads (migrates and registers) before taking requests
+starting = false
+
+const lock = new BackupLock()
+const backups = new BackupService({
+  repos,
+  crypto,
+  db: backupDb,
+  paths,
+  gate: files,
+  lock,
+  now,
+  newId,
+  timeZone: config.timeZone,
+  pondVersion: VERSION,
+  workFactor: DEFAULT_WORK_FACTOR,
+})
+const restores = new RestoreService({
+  db: backupDb,
+  paths,
+  lock,
+  safety,
+  newId,
+  maxUploadBytes: config.restoreMaxBytes,
+  shippedPads: () =>
+    new Map(
+      registrySource
+        .list()
+        .filter((m) => !m.manifest.devOnly || config.devPads)
+        .map((m) => [
+          m.manifest.id,
+          { name: m.manifest.name, migrations: m.migrations.map((x) => x.name) },
+        ]),
+    ),
+})
 
 const app = createApp({
   repos,
@@ -69,6 +132,12 @@ const app = createApp({
   padHost,
   simplefin,
   timeZone: config.timeZone,
+  backups,
+  restores,
+  restart: () => {
+    log.warn('Stopping to apply a restore. If Pond does not come back by itself, start it again.')
+    setTimeout(() => shutdown('restore'), 500)
+  },
   spaceRoutes: [],
 })
 const server = app.listen(config.port, config.host, () => {
@@ -119,14 +188,31 @@ const padJobs = startSyncScheduler({
     ),
 })
 
+// A large backup uploaded over Wi-Fi can take longer than Node's 5-minute default.
+server.requestTimeout = 60 * 60_000
+
+const backupSchedule = startSyncScheduler({
+  run: () => backups.runDue(),
+  intervalMs: 5 * 60_000,
+  firstDelayMs: 60_000,
+  onError: (e) =>
+    log.error(
+      { err: { name: (e as Error)?.name, message: (e as Error)?.message } },
+      'scheduled backup failed',
+    ),
+})
+
 function shutdown(signal: string) {
   padJobs.stop()
+  backupSchedule.stop()
   log.info({ signal }, 'shutting down')
   scheduler.stop()
   server.close(() => {
     db.close()
     process.exit(0)
   })
+  // Browsers keep connections open; don't wait for them for ever.
+  setTimeout(() => server.closeAllConnections(), 5_000).unref()
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))

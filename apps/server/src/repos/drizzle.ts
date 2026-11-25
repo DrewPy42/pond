@@ -286,6 +286,7 @@ export function createDrizzleRepos(
       setReauth: (id, at) =>
         void db.update(sessions).set({ reauthAt: at }).where(eq(sessions.id, id)).run(),
       delete: (id) => void db.delete(sessions).where(eq(sessions.id, id)).run(),
+      deleteAll: () => void db.delete(sessions).run(),
       deleteForUser: (userId, exceptId) =>
         void db
           .delete(sessions)

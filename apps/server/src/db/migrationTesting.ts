@@ -1,20 +1,9 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { MIGRATIONS_DIR, runMigrations, type DbHandle } from './index.js'
+import { MIGRATIONS_DIR, readJournal, runMigrations, type DbHandle } from './index.js'
 
-interface JournalEntry {
-  idx: number
-  tag: string
-}
-
-export function readJournal(dir = MIGRATIONS_DIR): JournalEntry[] {
-  const raw = fs.readFileSync(path.join(dir, 'meta', '_journal.json'), 'utf8')
-  return (JSON.parse(raw) as { entries: JournalEntry[] }).entries
-}
-
-/** Number of migrations that ship today. Each one is one "schema version". */
-export const latestSchemaVersion = (): number => readJournal().length
+export { latestSchemaVersion, readJournal } from './index.js'
 
 /**
  * Bring a database to exactly `version` (1 = only the first migration applied), the way an
