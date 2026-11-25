@@ -1,4 +1,5 @@
 import { inject, type Component, type InjectionKey } from 'vue'
+import type { Role } from './context.js'
 
 /**
  * The web side of a pad. A pad's client code registers components for the places Pond lets pads
@@ -9,6 +10,8 @@ export interface PadPage {
   /** Path under `/p/<padId>/`, e.g. "notes" -> /p/notes/notes. Empty string is the pad's home. */
   path: string
   component: Component
+  /** Hide from people below this role in the Space. Tidiness only: server routes enforce access. */
+  role?: Role
 }
 export interface PadSidebarItem {
   title: string
@@ -16,6 +19,8 @@ export interface PadSidebarItem {
   icon: string
   /** The page path this item opens. */
   path: string
+  /** Hide from people below this role in the Space. Tidiness only: server routes enforce access. */
+  role?: Role
 }
 export interface PadWidget {
   title?: string
@@ -51,6 +56,17 @@ export interface PadHostApi {
     put<T = unknown>(path: string, body?: unknown): Promise<T>
     patch<T = unknown>(path: string, body?: unknown): Promise<T>
     del<T = unknown>(path: string): Promise<T>
+    /** Send a file to an `upload` route (as the raw request body). */
+    upload<T = unknown>(
+      path: string,
+      file: Blob,
+      query?: Record<string, string | number | boolean | undefined>,
+    ): Promise<T>
+    /** Save a file a route returns with `files.download`. */
+    download(
+      path: string,
+      query?: Record<string, string | number | boolean | undefined>,
+    ): Promise<void>
   }
 }
 export const PAD_HOST: InjectionKey<PadHostApi> = Symbol('pond-pad-host')

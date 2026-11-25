@@ -50,7 +50,8 @@ export function guardApi<T extends object>(prefix: string, api: T, enabled: bool
   for (const [k, v] of Object.entries(api)) {
     out[k] =
       typeof v === 'function'
-        ? jsonGuard(`${prefix}.${k}`, v as (...a: unknown[]) => unknown)
+        ? // Bound, because some methods call their neighbors (a table's findOne uses find).
+          jsonGuard(`${prefix}.${k}`, (v as (...a: unknown[]) => unknown).bind(api))
         : v && typeof v === 'object'
           ? guardApi(`${prefix}.${k}`, v, enabled)
           : v

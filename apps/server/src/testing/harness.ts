@@ -11,6 +11,7 @@ import { createEventBus, type EventBus } from '../events.js'
 import { PadHost } from '../lilypads/host.js'
 import { createLogger } from '../logger.js'
 import type { PadModule } from '@pond/sdk'
+import { createFakeFileStore } from './fakeFiles.js'
 import { createFakeRepos } from './fakeRepos.js'
 import { FakeSimpleFin } from './fakeSimpleFin.js'
 
@@ -21,6 +22,8 @@ export interface TestEnv {
   /** Core events (delivered asynchronously: `await env.events.whenIdle()` before asserting). */
   events: EventBus
   padHost: PadHost
+  /** The in-memory file store pad uploads go to. */
+  files: ReturnType<typeof createFakeFileStore>
   /** Script what the "bank" returns and inspect what we asked. */
   simplefin: FakeSimpleFin
   app: Express
@@ -42,6 +45,7 @@ export function makeEnv(
   const repos = createFakeRepos(() => new Date(t))
   const log = createLogger('silent')
   const events = createEventBus()
+  const files = createFakeFileStore()
   const padHost = new PadHost({
     repos,
     crypto: createCrypto(randomBytes(32)),
@@ -51,6 +55,7 @@ export function makeEnv(
     timeZone: 'UTC',
     events,
     source: { list: () => opts.pads ?? [] },
+    files,
     includeDevPads: true,
     strictJson: true, // every call between a pad and Pond must be plain JSON
     failureLimit: opts.padFailureLimit,
@@ -70,7 +75,15 @@ export function makeEnv(
     timeZone: 'UTC',
     spaceRoutes: [],
   }
-  return { ctx, events, padHost, simplefin, app: createApp(ctx), advance: (ms) => void (t += ms) }
+  return {
+    ctx,
+    events,
+    padHost,
+    files,
+    simplefin,
+    app: createApp(ctx),
+    advance: (ms) => void (t += ms),
+  }
 }
 
 export interface Res {

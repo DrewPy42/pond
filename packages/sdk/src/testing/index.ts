@@ -13,6 +13,7 @@ import type {
   PadRouter,
 } from '../context.js'
 import { PadError } from '../context.js'
+import { checkUploadSpec, detectFileType, isPadDownload, safeDownloadName } from '../files.js'
 import {
   PadDataError,
   applyOps,
@@ -43,10 +44,16 @@ export interface CallOptions {
   query?: unknown
   body?: unknown
   spaceId?: string
+  /** The bytes to send to an upload route. */
+  file?: Uint8Array
+  /** For `reauth` routes: whether the password was entered recently. Defaults to true. */
+  reauthed?: boolean
 }
 export interface CallResult {
   status: number
   body: unknown
+  /** Set when the route returned a file. */
+  download?: { filename: string; bytes: Uint8Array }
 }
 
 const RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 }
@@ -70,6 +77,12 @@ export async function createTestPad(module: PadModule, options: TestPadOptions =
   schemaFromMigrations(module.migrations) // also checks for duplicate names
 
   const settings = new Map<string, string | number | boolean>()
+  // Pad files, in memory, kept apart per Space like on a real Pond.
+  const files = new Map<string, Uint8Array>()
+  const needFiles = () => {
+    if (!module.manifest.permissions.includes('files:store'))
+      throw new Error('This pad did not ask for the "files:store" permission')
+  }
   const audit: {
     action: string
     targetType?: string
@@ -106,6 +119,17 @@ export async function createTestPad(module: PadModule, options: TestPadOptions =
       },
       set: async (key, value) => void settings.set(key, value),
     },
+    files: {
+      download: async (fileId, filename) => {
+        needFiles()
+        if (!files.has(`${id}/${fileId}`)) throw new PadError(404, 'not_found')
+        return { $padDownload: { fileId, filename } }
+      },
+      remove: async (fileId) => {
+        needFiles()
+        files.delete(`${id}/${fileId}`)
+      },
+    },
     secrets: { encrypt: async (t) => `test:${t}`, decrypt: async (s) => s.replace(/^test:/, '') },
     audit: {
       record: async (e) =>
@@ -131,8 +155,19 @@ export async function createTestPad(module: PadModule, options: TestPadOptions =
   const jobs = new Map<string, { schedule: Schedule; handler: (s: PadScope) => unknown }>()
   const add =
     (method: string) =>
-    (path: string, opts: RouteOptions<unknown, unknown>, handler: RouteHandler<unknown, unknown>) =>
-      void routes.push({ method, path, opts, handler })
+    (
+      path: string,
+      opts: RouteOptions<unknown, unknown>,
+      handler: RouteHandler<unknown, unknown>,
+    ) => {
+      if (opts.upload) {
+        needFiles()
+        checkUploadSpec(opts.upload)
+        if (method !== 'POST' && method !== 'PUT') throw new Error('upload routes are POST or PUT')
+        if (opts.body) throw new Error("an upload route takes a file, so it can't declare a body")
+      }
+      routes.push({ method, path, opts, handler })
+    }
   const router = {
     get: add('GET'),
     post: add('POST'),
@@ -171,20 +206,42 @@ export async function createTestPad(module: PadModule, options: TestPadOptions =
         const params = r.method === method ? matchPath(r.path, path) : null
         if (!params) continue
         if (RANK[role] < RANK[r.opts.role]) return { status: 403, body: { error: 'forbidden' } }
+        if (r.opts.reauth && o.reauthed === false)
+          return { status: 403, body: { error: 'reauth_required' } }
+        const upload = r.opts.upload
+        const sentType = upload && o.file ? detectFileType(o.file) : null
+        if (upload) {
+          if (o.file && o.file.length > upload.maxBytes)
+            return { status: 413, body: { error: 'file_too_large' } }
+          if (!o.file?.length) return { status: 400, body: { error: 'file_required' } }
+          if (!sentType || !upload.types.includes(sentType))
+            return { status: 415, body: { error: 'unsupported_file_type' } }
+        }
         const body = parse(r.opts.body, o.body)
         const query = parse(r.opts.query, o.query ?? {})
         if (!body.success || !query.success)
           return { status: 400, body: { error: 'invalid_input' } }
+        const inSpace = o.spaceId ?? spaceId
+        const stored = upload ? newId() : null
+        if (stored) files.set(`${inSpace}/${stored}`, o.file!.slice())
         try {
-          const scope = scopeFor(role, o.spaceId ?? spaceId)
+          const scope = scopeFor(role, inSpace)
           const out = await r.handler({
+            ...(stored ? { file: { id: stored, size: o.file!.length, type: sentType! } } : {}),
             ...scope,
             params: { ...params, ...o.params },
             query: query.data,
             body: body.data,
           })
+          if (isPadDownload(out)) {
+            const bytes = files.get(`${inSpace}/${out.$padDownload.fileId}`)
+            if (!bytes) return { status: 404, body: { error: 'not_found' } }
+            const filename = safeDownloadName(out.$padDownload.filename, detectFileType(bytes))
+            return { status: 200, body: {}, download: { filename, bytes } }
+          }
           return { status: 200, body: out === undefined ? {} : JSON.parse(JSON.stringify(out)) }
         } catch (e) {
+          if (stored) files.delete(`${inSpace}/${stored}`)
           if (e instanceof PadError) return { status: e.status, body: { error: e.code } }
           if (e instanceof PadDataError) return { status: 400, body: { error: e.code } }
           throw e
@@ -206,6 +263,9 @@ export async function createTestPad(module: PadModule, options: TestPadOptions =
     /** Direct access to the pad's tables, for assertions. */
     table: (name: string, forSpace = spaceId) =>
       store.table(module.manifest.id, schema, name, forSpace),
+    /** Ids of the files stored for a Space. */
+    files: (forSpace = spaceId) =>
+      [...files.keys()].filter((k) => k.startsWith(`${forSpace}/`)).map((k) => k.split('/')[1]!),
     audit,
     logs,
     settings,

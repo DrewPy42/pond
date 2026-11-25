@@ -36,6 +36,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       : e.NODE_ENV === 'production',
     dataDir,
     dbPath: path.join(dataDir, 'pond.db'),
+    filesDir: path.join(dataDir, 'files'),
     keyPath: path.join(dataDir, 'keys', 'master.key'),
   }
 }

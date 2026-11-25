@@ -3,12 +3,15 @@ import type { SpacePad } from '@pond/shared'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '../api'
+import { roleAllows } from '../composables/padFiles'
 import { padClients } from '../lilypads/registry'
+import { useSpacesStore } from './spaces'
 
 /** The pads running in the active Space, joined with their web code from the registry. */
 export const usePadsStore = defineStore('pads', () => {
   const enabled = ref<SpacePad[]>([])
   const spaceId = ref<string | null>(null)
+  const spaces = useSpacesStore()
 
   async function load(id: string | null) {
     spaceId.value = id
@@ -28,11 +31,9 @@ export const usePadsStore = defineStore('pads', () => {
 
   const sidebar = computed(() =>
     enabled.value.flatMap((p) =>
-      (clientFor(p.id)?.sidebar ?? []).map((i: PadSidebarItem) => ({
-        ...i,
-        padId: p.id,
-        to: `/p/${p.id}/${i.path}`,
-      })),
+      (clientFor(p.id)?.sidebar ?? [])
+        .filter((i: PadSidebarItem) => roleAllows(i.role, spaces.active?.role))
+        .map((i: PadSidebarItem) => ({ ...i, padId: p.id, to: `/p/${p.id}/${i.path}` })),
     ),
   )
   const widgets = computed(() =>
@@ -46,7 +47,11 @@ export const usePadsStore = defineStore('pads', () => {
     ),
   )
   const pageFor = (padId: string, path: string): PadPage | undefined =>
-    isEnabled(padId) ? clientFor(padId)?.pages?.find((p) => p.path === path) : undefined
+    isEnabled(padId)
+      ? clientFor(padId)?.pages?.find(
+          (p) => p.path === path && roleAllows(p.role, spaces.active?.role),
+        )
+      : undefined
 
   return { enabled, spaceId, load, isEnabled, sidebar, widgets, transactionPanels, pageFor }
 })

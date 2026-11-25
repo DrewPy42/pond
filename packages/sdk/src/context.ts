@@ -1,6 +1,7 @@
 import type { AccountView, BalanceView, CategoryView, TransactionView } from '@pond/shared'
 import type { ZodType } from 'zod'
 import type { Migration, TableApi, Row } from './data.js'
+import type { PadDownload, UploadSpec, UploadedFile } from './files.js'
 import type { PadManifest } from './manifest.js'
 
 /** Roles a route can require. Space owners and admins satisfy every role. */
@@ -92,6 +93,14 @@ export interface PadLog {
   error(message: string, data?: Record<string, unknown>): void
 }
 
+/** The pad's own files in this Space (needs `files:store`). Files arrive through upload routes. */
+export interface PadFiles {
+  /** Return this from a route to send the file as a download. */
+  download(fileId: string, filename: string): Promise<PadDownload>
+  /** Deleting a file that is already gone is fine. */
+  remove(fileId: string): Promise<void>
+}
+
 /** What every handler (route, event, job) is given. */
 export interface PadScope {
   padId: string
@@ -102,6 +111,7 @@ export interface PadScope {
   db: PadDb
   settings: PadSettings
   secrets: PadSecrets
+  files: PadFiles
   audit: PadAudit
   log: PadLog
   newId(): string
@@ -113,6 +123,8 @@ export type PadRequest<B = unknown, Q = unknown> = PadScope & {
   params: Record<string, string>
   query: Q
   body: B
+  /** Set on routes that declare `upload`. */
+  file?: UploadedFile
 }
 export interface RouteOptions<B = unknown, Q = unknown> {
   /** The least role allowed. There is no default: every route must say. */
@@ -120,6 +132,16 @@ export interface RouteOptions<B = unknown, Q = unknown> {
   /** Validated before the handler runs; a failure is a 400. */
   body?: ZodType<B>
   query?: ZodType<Q>
+  /**
+   * The request body is a file (POST or PUT only; send details in the query string). It can't be
+   * combined with `body`. If the handler throws, the stored file is deleted.
+   */
+  upload?: UploadSpec
+  /**
+   * Require the person to have entered their password in the last 5 minutes. Pond asks them
+   * itself; the pad never sees it. Every successful call is written to the audit log.
+   */
+  reauth?: boolean
 }
 /** Return JSON-serializable data. Throw `PadError` for an expected failure. */
 export type RouteHandler<B = unknown, Q = unknown> = (

@@ -6,6 +6,7 @@ import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
 import { openDb, runMigrations } from './db/index.js'
 import { newId } from './db/ids.js'
 import { seedMissingCategories } from './ledger/service.js'
+import { createDiskFileStore } from './files/store.js'
 import { createEventBus } from './events.js'
 import { PadHost } from './lilypads/host.js'
 import { registrySource } from './lilypads/registry.js'
@@ -49,6 +50,7 @@ const padHost = new PadHost({
   timeZone: config.timeZone,
   events,
   source: registrySource,
+  files: createDiskFileStore(config.filesDir, crypto),
   includeDevPads: config.devPads,
 })
 

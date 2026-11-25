@@ -81,8 +81,10 @@ export function requireSpace(repos: Repos, minRole: Role): RequestHandler {
 }
 
 /** For sensitive actions (reveals, backups, security settings): password re-entered < 5 min ago. */
-export const requireRecentReauth: RequestHandler = (req, res, next) => {
-  if (!req.auth) return sendError(res, 401, 'unauthenticated')
-  if (!hasRecentReauth(req.auth.reauthAt)) return sendError(res, 403, 'reauth_required')
-  next()
-}
+export const requireRecentReauth =
+  (now: () => Date): RequestHandler =>
+  (req, res, next) => {
+    if (!req.auth) return sendError(res, 401, 'unauthenticated')
+    if (!hasRecentReauth(req.auth.reauthAt, now())) return sendError(res, 403, 'reauth_required')
+    next()
+  }
