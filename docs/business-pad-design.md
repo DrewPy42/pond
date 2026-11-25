@@ -1,6 +1,6 @@
 # Business Manager and the M6 host additions: proposal for review
 
-**Status: proposal, nothing built yet.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
+**Status: approved 2026-11-24, nothing built yet.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
 
 - **M6a: host additions** (files, password re-check for pad routes, owner-only sidebar items).
 - **M6b: the Business Manager pad** (profile, reports, people and pay, documents).
@@ -11,29 +11,27 @@
 - **The pad ships empty.** No business, people or sample records. Test data is added separately, and is always made up.
 - **No data migration.** business_manager was only ever used in development.
 
-## Decisions I need from you
+## Decisions (approved 2026-11-24)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| 1 | Core gives each new business Space Schedule C tax lines. Keep them? | **No. Keep the category names, drop the tax lines** (see "Categories and tax lines") |
+| 1 | Starter categories for a new business Space | **Keep the category names, drop the Schedule C tax lines** (see "Categories and tax lines") |
 | 2 | Who sees people, pay, tax IDs and documents? | **Space owners only** (this includes Pond admins, who act as owners). Viewers and editors see reports |
-| 3 | Encrypt uploaded files on disk? | **Yes, every pad file** |
+| 3 | Are uploaded files encrypted on disk? | **Yes, every pad file** |
 | 4 | Which uploads are accepted? | **PDF, JPEG and PNG, up to 15 MB** |
-| 5 | Tax year | **Add one optional setting, "tax year starts in", default January** |
+| 5 | Tax year | **One optional setting, "tax year starts in", default January** |
 
-Number 5 reverses what I said earlier. I suggested leaving the fiscal year out, but once any kind of business is allowed, some will not use the calendar year.
-
-The two security changes (the password re-check and file upload and download) need your explicit review, like the M5 route changes.
+The two security changes (the password re-check, and file upload and download) were reviewed and approved with the rest. Number 5 reverses earlier advice to leave the fiscal year out: once any kind of business is allowed, some will not use the calendar year.
 
 ## Categories and tax lines
 
 Today `apps/server/src/ledger/categorySeeds.ts` gives every new business Space a list whose tax lines say "Schedule C, Line 8" and so on, and names one category "Meals (50% deductible)". Schedule C applies only to sole proprietors and single-member LLCs. For anyone else those labels are wrong.
 
-**Recommendation:** keep a starter list of ordinary category names, so a new business doesn't face a blank page; remove every tax line; rename the meals category to "Meals". People can type their own tax lines on the Categories page, which already supports it. Spaces that already exist are left alone, so no migration is needed.
+**Decided:** keep a starter list of ordinary category names, so a new business has something to use right away; remove every tax line; rename the meals category to "Meals". Spaces that already exist are left alone, so no migration is needed. People can still type their own tax lines on the Categories page.
 
-- **The cost:** a sole proprietor no longer gets Schedule C lines filled in.
-- **Not recommended for v1:** a "fill in Schedule C lines" button. Pads can't write core data (amendment A5), so it would open a new write path for one convenience. Line-by-line presets for other forms would also mean keeping IRS form layouts correct every year. Both go in `future.md`.
-- **If you meant only the pad** by "don't pre-seed", the alternative is to leave the core list as it is.
+The intended use of the tax summary is to **hand it to an accountant**, who connects the categories to whatever forms the business files. Pond doesn't need to know tax forms, so tax lines are optional.
+
+**Starter lists per type of business: not in v1.** It is possible (ask the business type when the Space is created and pick a list), but pre-filled tax lines would mean getting every form's line numbers right and keeping them current each year, which the accountant already does. It also adds a question to creating a Space. One general list serves v1; the idea is noted in `future.md`.
 
 ## M6a: host additions
 
@@ -144,4 +142,4 @@ Functionality tests use fakes, as everywhere. The ones that matter most:
 The pad ships with none. When you want some, I can add clearly made-up records (invented names, and tax IDs that can't be real) to the database you point me to.
 
 ## Added to `future.md` when built
-Tax line presets per form, receipts attached to transactions, 1099 totals for contractors, payroll.
+Receipts attached to transactions, 1099 totals for contractors, payroll.
