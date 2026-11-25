@@ -100,6 +100,8 @@ export function createMemoryPadStore(opts: { newId: () => string; now: () => Dat
           store.rows.some(
             (r) =>
               r !== ignore &&
+              // On a Space table, "unique" means unique within one Space.
+              (t.scope !== 'space' || r.space_id === candidate.space_id) &&
               cols.every(
                 (c) => (r[c] ?? null) === (candidate[c] ?? null) && (candidate[c] ?? null) !== null,
               ),

@@ -111,7 +111,7 @@ describe('categories: seedCategories, seedMissingCategories, createCategory, upd
   /**
    * Function: seedCategories(deps, spaceId, type)
    * Inputs:   the world's HOME (personal) and BIZ (business) Spaces
-   * Expected: HOME has Groceries and no tax lines; BIZ has Advertising on "Schedule C, Line 8"
+   * Expected: HOME has Groceries; BIZ has Advertising; neither has any tax lines
    */
   it('gives personal and business Spaces their own starter lists', () => {
     const w = makeLedgerWorld()
@@ -119,7 +119,8 @@ describe('categories: seedCategories, seedMissingCategories, createCategory, upd
     const biz = w.repos.categories.listForSpace(IDS.BIZ)
     expect(home.map((c) => c.name)).toContain('Groceries')
     expect(home.every((c) => c.taxLine === null)).toBe(true)
-    expect(biz.find((c) => c.name === 'Advertising')?.taxLine).toBe('Schedule C, Line 8')
+    expect(biz.map((c) => c.name)).toContain('Advertising')
+    expect(biz.every((c) => c.taxLine === null)).toBe(true)
   })
 
   /**

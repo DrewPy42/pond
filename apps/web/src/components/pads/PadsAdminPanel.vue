@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { PadListing } from '@pond/shared'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../../api'
 import { FormDialog } from '../common'
 import { useAction } from '../../composables/useAction'
+import { usePadsStore } from '../../stores/pads'
 
 /** For the administrator: see the apps shipped with Pond, install them (approving what they can access) and remove them. */
 const { busy, error, run } = useAction()
+const spacePads = usePadsStore()
 const pads = ref<PadListing[]>([])
 const installing = ref<PadListing | null>(null)
 const installOpen = ref(false)
@@ -19,6 +21,8 @@ async function load() {
   if (r) pads.value = r.pads
 }
 onMounted(load)
+// Switching an app on or off for a Space (the panel below) changes the "On in N Spaces" counts.
+watch(() => spacePads.enabled, load)
 
 const label = (p: PadListing) =>
   ({

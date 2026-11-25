@@ -27,6 +27,10 @@ export const CONTRACT_MIGRATIONS: Migration[] = [
       },
       indexes: [{ columns: ['priority'] }],
     })
+    m.createTable('tags', {
+      columns: { name: 'text', extra: { type: 'text', nullable: true } },
+      indexes: [{ columns: ['name'], unique: true }],
+    })
     m.createTable('prefs', {
       scope: 'global',
       columns: { key: 'text', value: 'text' },
@@ -303,6 +307,36 @@ export function tableStoreContract(label: string, make: () => PadStore): void {
       await prefs().insert({ key: 'lang', value: 'en' })
       expect(await code(prefs().update({ key: 'lang' }, { key: 'theme' }))).toBe('duplicate')
       expect((await prefs().findOne({ key: 'lang' }))!.value).toBe('en')
+    })
+
+    /**
+     * Function: unique indexes on a Space table
+     * Inputs:   the name "monthly" inserted in Space S1 and in S2; then again in S1; then a rename
+     *           in S2 onto another of its own names; then a unique index added by a later migration
+     *           with the same value in both Spaces
+     * Expected: each Space may use the name once; repeats inside one Space give "duplicate"; one Space
+     *           never learns about another's values; the later index is per Space too
+     */
+    it('keeps uniqueness inside each Space', async () => {
+      const { store, schema } = setup()
+      const tags = (space: string) => store.table(PAD, schema, 'tags', space)
+      await tags('S1').insert({ name: 'monthly', extra: 'x' })
+      await tags('S2').insert({ name: 'monthly', extra: 'x' })
+      expect(await code(tags('S1').insert({ name: 'monthly' }))).toBe('duplicate')
+      await tags('S2').insert({ name: 'yearly' })
+      expect(await code(tags('S2').update({ name: 'yearly' }, { name: 'monthly' }))).toBe(
+        'duplicate',
+      )
+      const later = collectOps(
+        defineMigration('0002_unique_extra', (m) =>
+          m.createIndex('tags', ['extra'], { unique: true }),
+        ),
+      )
+      const next = applyOps(schema, later)
+      store.applyOps(PAD, later)
+      const t = (space: string) => store.table(PAD, next, 'tags', space)
+      expect(await code(t('S1').insert({ name: 'other', extra: 'x' }))).toBe('duplicate')
+      await t('S3').insert({ name: 'other', extra: 'x' })
     })
 
     /**

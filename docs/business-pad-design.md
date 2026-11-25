@@ -1,6 +1,6 @@
 # Business Manager and the M6 host additions: proposal for review
 
-**Status: approved 2026-11-24. M6a (host additions) is built; M6b (the pad, including the starter-category change) is not.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
+**Status: approved 2026-11-24. M6a and M6b are built.** M6 is the Business Manager LilyPad. It needs three things the host doesn't have, so it is split the way M5 was:
 
 - **M6a: host additions** (files, password re-check for pad routes, owner-only sidebar items).
 - **M6b: the Business Manager pad** (profile, reports, people and pay, documents).
@@ -117,6 +117,17 @@ A file with a type (tax form, contract, receipt, ID, other), an optional tax yea
 
 ### Tables
 `lp_business_profile`, `lp_business_deductions`, `lp_business_people`, `lp_business_pay_records`, `lp_business_documents`. Money is integer cents. IDs are encrypted with `ctx.secrets`.
+
+### As built (M6b)
+
+Code: `lilypads/business`. It follows the design above, with these details:
+
+- **A tax year is named for the calendar year it starts in**, and screens always show its first and last day. Quarters are quarters of the tax year.
+- **Partly deductible:** an owner marks a category from the tax summary (a category appears there once it has money in that year). 100% is the same as unmarked. Halves of a cent round away from zero.
+- **Tax IDs** accept 4 to 30 letters, numbers, spaces and dashes. The mask shows the last four, or none when the ID has fewer than six characters. Only the two reveal routes use the password re-check.
+- **Documents** download without a password re-check (owner only, and each download is audited).
+- **CSV export** columns: date, description, payee, amount (signed, money in is positive), type (income, expense, transfer or uncategorized), category, tax line, memo, pending. It is limited to 20,000 transactions at a time.
+- **Not in the screens:** linking receipts to transactions (see `future.md`).
 
 ## Not carried over from business_manager
 

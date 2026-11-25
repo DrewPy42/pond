@@ -47,6 +47,8 @@ export interface PadHostApi {
   padId: string
   spaceId: string
   canEdit: boolean
+  /** The person is an owner of the Space. For showing controls; server routes enforce access. */
+  isOwner: boolean
   api: {
     get<T = unknown>(
       path: string,

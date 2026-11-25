@@ -51,8 +51,8 @@ describe('POST /api/spaces (category seeding)', () => {
   /**
    * Function: POST /api/spaces, GET /api/spaces/:spaceId/categories
    * Inputs:   a new personal Space and a new business Space
-   * Expected: the personal one has "Groceries" with no tax line; the business one has
-   *           "Advertising" with tax line "Schedule C, Line 8"
+   * Expected: the personal one has "Groceries" and the business one "Advertising", both with
+   *           no tax line
    */
   it('seeds starter categories by Space type', async () => {
     const w = await world()
@@ -63,7 +63,7 @@ describe('POST /api/spaces (category seeding)', () => {
       taxLine: null,
     })
     expect(biz.find((c: { name: string }) => c.name === 'Advertising')).toMatchObject({
-      taxLine: 'Schedule C, Line 8',
+      taxLine: null,
     })
   })
 })

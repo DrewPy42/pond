@@ -44,13 +44,16 @@ export interface TransactionListOptions {
   offset?: number
 }
 
+/** A transaction as a pad sees it. `linkedTransfer`: one side of a transfer, so never income or spending. */
+export type PadTransaction = TransactionView & { linkedTransfer: boolean }
+
 /** Requires the matching permission, and returns privacy-filtered views (the same as the web app sees). */
 export interface ScopedCore {
   accounts: { list(): Promise<AccountView[]> }
   categories: { list(opts?: { includeArchived?: boolean }): Promise<CategoryView[]> }
   transactions: {
-    list(opts?: TransactionListOptions): Promise<{ transactions: TransactionView[]; total: number }>
-    get(id: string): Promise<TransactionView | null>
+    list(opts?: TransactionListOptions): Promise<{ transactions: PadTransaction[]; total: number }>
+    get(id: string): Promise<PadTransaction | null>
   }
   balances: {
     latest(): Promise<{ accountId: string; balanceCents: number; date: string }[]>

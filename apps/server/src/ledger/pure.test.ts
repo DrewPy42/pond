@@ -249,19 +249,15 @@ describe('category seeds (seedsFor(type))', () => {
     expect(seedsFor('business')).toBe(BUSINESS_SEEDS)
   })
   /**
-   * Inputs:   the business (Schedule C) list ported from business_manager
-   * Expected: every income and expense category has a "Schedule C, Line ..." tax line; "Other
-   *           Expenses" is Line 27a; Gross Receipts is Line 1
+   * Function: BUSINESS_SEEDS
+   * Inputs:   the general business starter list
+   * Expected: no category has a tax line or mentions a tax form or percentage; Meals is plain "Meals"
    */
-  it('give every business category a Schedule C tax line', () => {
-    for (const s of BUSINESS_SEEDS.filter((x) => x.kind !== 'transfer')) {
-      expect(s.taxLine, s.name).toMatch(/^Schedule C, Line \d+[a-z]?$/)
+  it('gives a new business plain category names with no tax form attached', () => {
+    for (const s of BUSINESS_SEEDS) {
+      expect(s.taxLine, s.name).toBeUndefined()
+      expect(s.name).not.toMatch(/schedule|deductible|%/i)
     }
-    expect(BUSINESS_SEEDS.find((s) => s.name === 'Other Expenses')?.taxLine).toBe(
-      'Schedule C, Line 27a',
-    )
-    expect(BUSINESS_SEEDS.find((s) => s.name === 'Gross Receipts / Sales')?.taxLine).toBe(
-      'Schedule C, Line 1',
-    )
+    expect(BUSINESS_SEEDS.map((s) => s.name)).toContain('Meals')
   })
 })

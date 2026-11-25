@@ -36,6 +36,9 @@ const host: PadHostApi = {
   get spaceId() {
     return spaces.active?.id ?? ''
   },
+  get isOwner() {
+    return spaces.active?.role === 'owner'
+  },
   get canEdit() {
     return spaces.active?.role === 'owner' || spaces.active?.role === 'editor'
   },

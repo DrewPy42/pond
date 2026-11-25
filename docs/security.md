@@ -65,6 +65,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - pino with a redaction list (passwords, tokens, access URLs, SSN, EIN, cookies). Errors returned to the client never include stack traces.
 
 - **LilyPad uploads and downloads** go through the host, never through pad code: nothing is read until sign-in, CSRF, role and enablement checks pass; compressed bodies are refused; the type is judged from the contents; downloads are attachments with `nosniff` and `no-store` and a cleaned name whose ending matches the content. Files are named by Pond's IDs only.
+- **Business tax IDs** (the business's own and each person's) are encrypted with the core crypto module, masked in every response except the two reveal routes, which need the password re-check and are audited. They are never in logs, the audit log or exports. CSV exports escape cells that could run as spreadsheet formulas.
 - **Password re-check** (5 minutes) guards reveals and other sensitive routes. The dialog belongs to the core web app; LilyPads never receive the password. (LilyPad code runs in the same browser page as core, which is acceptable only because v1 loads official pads alone.)
 
 ## Audit log

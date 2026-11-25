@@ -47,6 +47,14 @@ Plugin API **1.1.0** (additive; `^1.0` pads still load).
 
 **Testing.** `createTestPad` keeps files in memory per Space: `call(..., { file, reauthed })`, `result.download`, and `files()`.
 
+## As built (M6b)
+
+Plugin API **1.2.0** (additive).
+
+- **Transactions a pad reads** carry `linkedTransfer: boolean`, true for either side of a linked transfer, so a pad can label them (`splits.sum` already leaves them out).
+- **`usePadHost().isOwner`** lets a pad show owner-only controls. It is for display; the server route's role is what enforces access.
+- **Unique indexes on a per-Space table are unique within a Space.** Before this, they applied across all Spaces, which broke pads used in two Spaces and let a "duplicate" error hint at another Space's data. Both stores and the shared contract now include the Space. (Indexes already created on an existing database keep their old form; the only shipped one, in Personal Finance, includes a category ID that differs between Spaces, so it behaves the same.)
+
 ## Manifest (`lilypad.json`)
 
 ```json

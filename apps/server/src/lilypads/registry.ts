@@ -1,3 +1,4 @@
+import { padModule as businessPad } from '@pond/lilypad-business'
 import { padModule as personalPad } from '@pond/lilypad-personal'
 import { padModule as templatePad } from '@pond/lilypad-template'
 import type { PadModule } from '@pond/sdk'
@@ -10,6 +11,6 @@ import type { PadSource } from './host.js'
  *
  * The template pad is marked `devOnly`, so the host offers it only when POND_DEV_PADS=true.
  */
-const officialPads: PadModule[] = [personalPad, templatePad]
+const officialPads: PadModule[] = [businessPad, personalPad, templatePad]
 
 export const registrySource: PadSource = { list: () => officialPads }

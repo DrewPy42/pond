@@ -34,6 +34,12 @@ Requested by the primary user. Contacts, companies, notes and follow-ups, mainly
 ## Starter categories per type of business
 v1 gives every new business Space the same list of plain category names with no tax lines (`business-pad-design.md`). Later, Pond could ask the business type when the Space is created and offer a list that fits (a nonprofit has donations and grants, for example). Pre-filled tax lines for each tax form are a further step, and would need checking against the forms every year.
 
+## Business Manager follow-ups
+- **Attach receipts to transactions**, not just keep them in Documents.
+- **1099 totals for contractors** (needs payments linked to people).
+- **Payroll**: only if there is real demand; it is a large, regulated area.
+- **Tax line presets per tax form** (see "Starter categories per type of business").
+
 ## Other ideas
 - **Debt payoff planner** (snowball or avalanche) from loan and card balances plus interest rates.
 - **Cash-flow forecast** from recurring items.
