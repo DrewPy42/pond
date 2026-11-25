@@ -67,7 +67,10 @@ export function requireSpace(repos: Repos, minRole: Role): RequestHandler {
     const spaceId = req.params.spaceId
     if (typeof spaceId !== 'string') return sendError(res, 404, 'not_found')
 
-    if (!repos.spaces.findById(spaceId)) return sendError(res, 404, 'not_found')
+    // An archived Space is closed to everyone, administrators included, until it is restored.
+    // This one check shuts every Space route, core and LilyPad alike.
+    const space = repos.spaces.findById(spaceId)
+    if (!space || space.archivedAt !== null) return sendError(res, 404, 'not_found')
 
     // Admins are owners everywhere; everyone else needs a membership row.
     const role: Role | undefined = auth.user.isAdmin

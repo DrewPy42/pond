@@ -11,6 +11,8 @@ import {
   LedgerError,
   announceTransaction,
   canEditSpace,
+  hasArchivedSplit,
+  isArchivedSpace,
   type Actor,
   type Deps,
 } from '../ledger/service.js'
@@ -151,7 +153,8 @@ export function applyRulesToTransaction(d: Deps, txnId: string): RuleApplication
   const found = d.repos.transactions.findById(txnId)
   if (!found || found.txn.userEdited || found.txn.status !== 'active') return none
   const homeSpace = found.account.primarySpaceId
-  if (!homeSpace) return none
+  if (!homeSpace || hasArchivedSplit(d.repos, found.splits)) return none
+  if (isArchivedSpace(d.repos, homeSpace)) return none
   const rules = d.repos.rules.listForSpace(homeSpace)
   if (rules.length === 0) return none
 

@@ -143,9 +143,7 @@ export class PadHost {
           installed,
           state: installed ? (lp?.state ?? 'error') : 'available',
           problem: installed ? (lp ? lp.problem : 'Not loaded') : null,
-          enabledSpaceIds: installed
-            ? this.d.repos.pads.enablement.spacesForPad(m.manifest.id)
-            : [],
+          enabledSpaceIds: installed ? this.activeSpacesFor(m.manifest.id) : [],
         }
       })
   }
@@ -156,7 +154,20 @@ export class PadHost {
   }
 
   isEnabled(padId: string, spaceId: string): boolean {
-    return !!this.running(padId) && this.d.repos.pads.enablement.isEnabled(padId, spaceId)
+    return (
+      !!this.running(padId) &&
+      this.d.repos.pads.enablement.isEnabled(padId, spaceId) &&
+      !this.archived(spaceId)
+    )
+  }
+
+  /** An archived Space is asleep: pads hear nothing from it and run no jobs for it. */
+  private archived(spaceId: string): boolean {
+    return !!this.d.repos.spaces.findById(spaceId)?.archivedAt
+  }
+
+  private activeSpacesFor(padId: string): string[] {
+    return this.d.repos.pads.enablement.spacesForPad(padId).filter((s) => !this.archived(s))
   }
 
   // ---------- Start-up ----------
@@ -592,12 +603,7 @@ export class PadHost {
   private async dispatch(e: PadEvent): Promise<void> {
     for (const lp of this.loaded.values()) {
       const id = lp.module.manifest.id
-      if (
-        lp.state !== 'running' ||
-        lp.tripped ||
-        !this.d.repos.pads.enablement.isEnabled(id, e.spaceId)
-      )
-        continue
+      if (lp.state !== 'running' || lp.tripped || !this.isEnabled(id, e.spaceId)) continue
       for (const h of lp.events.filter((x) => x.type === e.type)) {
         try {
           await h.handler(e, this.buildScope(lp, { spaceId: e.spaceId, role: null, user: null }))
@@ -616,7 +622,7 @@ export class PadHost {
       const id = lp.module.manifest.id
       if (lp.state !== 'running' || lp.tripped) continue
       for (const job of lp.jobs) {
-        for (const spaceId of this.d.repos.pads.enablement.spacesForPad(id)) {
+        for (const spaceId of this.activeSpacesFor(id)) {
           const last = this.d.repos.pads.jobRuns.get(id, job.name, spaceId)
           if (!last) {
             this.d.repos.pads.jobRuns.set(id, job.name, spaceId, now.toISOString()) // first sighting: start the clock

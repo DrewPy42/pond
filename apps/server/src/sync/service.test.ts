@@ -884,3 +884,29 @@ describe('syncConnection: rules on new bank transactions (M4)', () => {
     )
   })
 })
+
+describe('bank sync and archived Spaces', () => {
+  /**
+   * Function: syncConnection, assignAccount
+   * Inputs:   an account assigned to BIZ, which is then archived; the bank reports a new purchase;
+   *           another account is then assigned to the archived Space; BIZ is restored and synced
+   * Expected: nothing is stored while archived and syncing stays switched on; assigning is refused
+   *           with space_archived; after restoring, the purchase arrives
+   */
+  it('leaves an archived Space alone and picks up where it left off', async () => {
+    const w = makeSyncWorld()
+    const second = sfAccount({ id: 'ACT-2', name: 'Savings' })
+    const id = await w.connect([checking([]), second])
+    const account = w.assign(id, 'ACT-1', 'BIZ')
+    w.repos.spaces.update('space-biz', { archivedAt: '2030-01-15T00:00:00.000Z' })
+    w.bank.returns([checking(), second])
+    await syncConnection(w.deps, id)
+    expect(w.repos.transactions.countForAccount(account)).toBe(0)
+    expect(w.repos.accounts.findById(account)!.syncEnabled).toBe(true)
+    expect(() => w.assign(id, 'ACT-2', 'BIZ')).toThrow('space_archived')
+    w.repos.spaces.update('space-biz', { archivedAt: null })
+    w.bank.returns([checking(), second])
+    await syncConnection(w.deps, id)
+    expect(w.repos.transactions.countForAccount(account)).toBe(1)
+  })
+})

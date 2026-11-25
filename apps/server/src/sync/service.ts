@@ -1,7 +1,13 @@
 import type { ConnectionAccountView, ConnectionView } from '@pond/shared'
 import { recordAudit } from '../audit.js'
 import type { Crypto } from '../crypto/index.js'
-import { LedgerError, announceTransaction, type Actor, type Deps } from '../ledger/service.js'
+import {
+  LedgerError,
+  announceTransaction,
+  type Actor,
+  type Deps,
+  isArchivedSpace,
+} from '../ledger/service.js'
 import type {
   AccountRecord,
   AccountType,
@@ -206,6 +212,9 @@ export function assignAccount(
   if (!a || a.connectionId !== connectionId) throw new LedgerError(404, 'not_found')
   if (input.primarySpaceId !== null && !d.repos.spaces.findById(input.primarySpaceId)) {
     throw new LedgerError(400, 'unknown_space')
+  }
+  if (input.primarySpaceId !== null && isArchivedSpace(d.repos, input.primarySpaceId)) {
+    throw new LedgerError(409, 'space_archived')
   }
   if (input.primarySpaceId !== a.primarySpaceId && d.repos.transactions.countForAccount(a.id) > 0) {
     // Its history already sits in the old Space's books; moving it is a later feature.
@@ -425,6 +434,8 @@ export async function syncConnection(
       continue
     }
     if (!acct.syncEnabled || !acct.primarySpaceId) continue
+    // Left alone while its Space is archived. Restoring makes the connection look back again.
+    if (isArchivedSpace(d.repos, acct.primarySpaceId)) continue
     if (sf.problems.length > 0) {
       s.warnings.push(...sf.problems) // skip the whole account rather than half-sync it
       skipped = true

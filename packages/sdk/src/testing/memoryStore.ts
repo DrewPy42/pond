@@ -20,7 +20,10 @@ import {
  * contract suite against both). Pad authors use it, through `createTestPad`, to test a pad
  * without Pond's core or a database.
  */
-export function createMemoryPadStore(opts: { newId: () => string; now: () => Date }): PadStore {
+export function createMemoryPadStore(opts: { newId: () => string; now: () => Date }): PadStore & {
+  /** Rows held for a Space across every table (for Pond's own tests). */
+  countSpaceRows(spaceId: string): number
+} {
   interface Table {
     rows: Row[]
     unique: string[][]
@@ -69,6 +72,11 @@ export function createMemoryPadStore(opts: { newId: () => string; now: () => Dat
   }
 
   return {
+    countSpaceRows: (spaceId) =>
+      [...tables.values()].reduce(
+        (sum, t) => sum + t.rows.filter((r) => r.space_id === spaceId).length,
+        0,
+      ),
     applyOps(padId, ops: SchemaOp[]) {
       for (const op of ops) {
         const name = physicalTableName(padId, op.table)

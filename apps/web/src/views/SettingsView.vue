@@ -6,6 +6,9 @@ import ConnectBankDialog from '../components/connections/ConnectBankDialog.vue'
 import ConnectionCard from '../components/connections/ConnectionCard.vue'
 import PadsAdminPanel from '../components/pads/PadsAdminPanel.vue'
 import PadsSpacePanel from '../components/pads/PadsSpacePanel.vue'
+import PasswordPanel from '../components/spaces/PasswordPanel.vue'
+import SpacesPanel from '../components/spaces/SpacesPanel.vue'
+import UsersPanel from '../components/spaces/UsersPanel.vue'
 import { useAction } from '../composables/useAction'
 import { useAuthStore } from '../stores/auth'
 import { useSpacesStore } from '../stores/spaces'
@@ -41,7 +44,13 @@ async function connected(c: ConnectionView) {
 <template>
   <h1 class="text-h5 mb-4">Settings</h1>
 
+  <SpacesPanel />
+
   <template v-if="auth.user?.isAdmin">
+    <v-divider class="my-6" />
+    <UsersPanel />
+
+    <v-divider class="my-6" />
     <div class="d-flex align-center mb-3 ga-3 flex-wrap">
       <h2 class="text-h6">Bank connections</h2>
       <v-spacer />
@@ -68,12 +77,11 @@ async function connected(c: ConnectionView) {
     <PadsAdminPanel />
   </template>
 
-  <template v-if="canManageSpace || auth.user?.isAdmin">
-    <v-divider v-if="auth.user?.isAdmin" class="my-6" />
-    <PadsSpacePanel :key="spaces.active?.id" />
+  <template v-if="canManageSpace && spaces.active">
+    <v-divider class="my-6" />
+    <PadsSpacePanel :key="spaces.active.id" />
   </template>
 
-  <p v-if="!auth.user?.isAdmin && !canManageSpace" class="text-medium-emphasis">
-    There is nothing to configure here yet.
-  </p>
+  <v-divider class="my-6" />
+  <PasswordPanel />
 </template>

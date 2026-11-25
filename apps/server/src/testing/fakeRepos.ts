@@ -49,6 +49,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
   const padJobRuns = new Map<string, string>()
   const settingRows = new Map<string, unknown>()
   let padIdCounter = 0
+  const padStore = createMemoryPadStore({ newId: () => `pad-row-${++padIdCounter}`, now })
   const accounts = new Map<string, AccountRecord>()
   const balances = new Map<string, BalanceSnapshotRecord>()
   const categories = new Map<string, CategoryRecord>()
@@ -188,6 +189,27 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
     },
 
     spaces: {
+      contents: (spaceId) => ({
+        accounts: [...accounts.values()].filter((a) => a.primarySpaceId === spaceId).length,
+        splits: [...splitRows.values()].filter((s) => s.spaceId === spaceId).length,
+        appRows: padStore.countSpaceRows(spaceId),
+      }),
+      delete(spaceId) {
+        // The real database refuses (foreign keys) to remove a Space something still points at.
+        if (
+          [...accounts.values()].some((a) => a.primarySpaceId === spaceId) ||
+          [...splitRows.values()].some((s) => s.spaceId === spaceId)
+        )
+          throw new MissingParentError('the Space is still in use')
+        for (const [k, v] of padEnabled) if (v.spaceId === spaceId) padEnabled.delete(k)
+        for (const k of padJobRuns.keys()) if (k.endsWith(`|${spaceId}`)) padJobRuns.delete(k)
+        for (const k of settingRows.keys())
+          if (k.startsWith(`space|${spaceId}|`)) settingRows.delete(k)
+        for (const [k, v] of ruleRows) if (v.spaceId === spaceId) ruleRows.delete(k)
+        for (const [k, v] of categories) if (v.spaceId === spaceId) categories.delete(k)
+        for (const k of members.keys()) if (k.startsWith(`${spaceId}|`)) members.delete(k)
+        spaces.delete(spaceId)
+      },
       create: (s) => void spaces.set(s.id, { ...s, archivedAt: null }),
       findById: (id) => spaces.get(id),
       listAll: () => [...spaces.values()].sort(byName((s) => s.name)),
@@ -646,7 +668,7 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
       },
     },
 
-    padStore: createMemoryPadStore({ newId: () => `pad-row-${++padIdCounter}`, now }),
+    padStore,
 
     system: { schemaVersion: () => schemaVersion },
     transaction: (fn) => fn(),

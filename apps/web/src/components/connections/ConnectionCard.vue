@@ -18,6 +18,11 @@ const spaceItems = computed(() => [
   { title: 'Not tracked', value: null },
   ...spaces.spaces.map((s) => ({ title: s.name, value: s.id })),
 ])
+/** An account in a Space that isn't listed (it's archived) says so instead of showing an id. */
+const itemsFor = (a: ConnectionAccountView) =>
+  a.primarySpaceId && !spaces.spaces.some((s) => s.id === a.primarySpaceId)
+    ? [...spaceItems.value, { title: 'In an archived Space', value: a.primarySpaceId }]
+    : spaceItems.value
 const status = computed(() => {
   switch (props.connection.status) {
     case 'active':
@@ -170,7 +175,7 @@ async function disconnect() {
             <td>
               <v-select
                 :model-value="a.primarySpaceId"
-                :items="spaceItems"
+                :items="itemsFor(a)"
                 :aria-label="`Space for ${a.name}`"
                 density="compact"
                 hide-details

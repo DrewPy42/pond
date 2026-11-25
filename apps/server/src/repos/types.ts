@@ -140,6 +140,23 @@ export interface SpaceRepo {
   setMember(spaceId: string, userId: string, role: Role): 'added' | 'changed'
   removeMember(spaceId: string, userId: string): void
   countOwners(spaceId: string): number
+
+  /** What a Space holds that must never be destroyed. All zero means it is empty. */
+  contents(spaceId: string): SpaceContents
+  /**
+   * Removes a Space and its set-up (members, categories, rules, app switches and settings). Only
+   * for an empty Space: the caller checks `contents` first, and the database refuses otherwise.
+   */
+  delete(spaceId: string): void
+}
+
+export interface SpaceContents {
+  /** Accounts that belong to the Space, archived ones included. */
+  accounts: number
+  /** Parts of any transaction that were put in this Space. */
+  splits: number
+  /** Rows in any LilyPad's tables for this Space, including data kept after an uninstall. */
+  appRows: number
 }
 
 export interface AuditRecord {
