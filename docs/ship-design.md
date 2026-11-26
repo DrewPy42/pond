@@ -1,6 +1,6 @@
 # Ship (M9): design
 
-**Status: approved 2026-11-26. Not built.**
+**Status: approved 2026-11-26. Not built.** The amendment at the end (ports, no runner, HTTPS, certificates and the development setup) is approved too. Where it differs from the text above it, the amendment wins.
 
 The goal: someone with a Raspberry Pi can install Pond by following one page, use it over `https` at home, and update it with one command without losing data.
 
@@ -139,6 +139,74 @@ One-click updates and automatic rollback, a ready-made Pi image with disk encryp
 ## Docs to change when built
 
 `architecture.md`, `security.md`, `testing.md`, `scope-v1.md` (M9a and M9b), `decisions.md`, `README.md`, and the new `install.md`.
+
+## Amendment (2026-11-26): sharing a Pi, HTTPS and certificates
+
+The test Pi already runs another app in Docker.
+
+| # | Question | Decision | Status |
+|---|---|---|---|
+| 13 | Ports | **Caddy's ports are settings in `.env`,** 443 and 80 by default. Pond brings its own Caddy and doesn't touch other apps | Approved |
+| 14 | GitHub runner on the Pi | **None. A Pi installs and updates Pond as a user would** | Approved |
+| 15 | Plain HTTP | **Pond never serves a page or data over plain HTTP** from the Pi to your devices | Approved |
+| 16 | The browser's HTTPS-only rule (HSTS) | **Off unless you turn it on** in `.env`; never covering subdomains | Approved |
+| 17 | Certificates | **Caddy's own authority by default.** A trusted certificate through your own domain or Tailscale comes later | Approved |
+| 18 | Development setup | **Reachable only from the computer running it** | Approved |
+
+### The test Pi
+
+Checked 2026-11-26: 64-bit (`aarch64`), 7.6 GiB of memory, a 235 GB SSD as the system disk with 213 GB free (the owner confirmed it's an SSD), and only ports 22 and 5200 listening. So **80 and 443 are free,** and the defaults work. It has more memory than the 4 GB in "Reference hardware", so passing on it **doesn't show that a 4 GB Pi is enough.**
+
+Docker publishes ports on IPv6 as well as IPv4. Where a home has public IPv6 addresses, only the router's firewall keeps the internet out. The install page says to check that it blocks incoming connections.
+
+### Ports (13)
+
+- With, say, `POND_HTTPS_PORT=8443`, the address is `https://<pi-name>.local:8443`. The address setting and the port are separate settings.
+- The install page shows how to see which ports are taken. Pond's own port is still never published.
+- A shared reverse proxy for several apps isn't set up or documented in v1. Serving Pond under a path such as `/pond` isn't supported.
+- **Ports don't separate cookies.** Browsers send a hostname's cookies to every port on it. Pond's cookies are marked `Secure`, so they aren't sent over plain HTTP, but **another HTTPS app on the same hostname would receive Pond's sign-in cookie.** The install page says so: share a hostname only with apps you trust, or give Pond its own name.
+
+### No runner (14)
+
+- This repository is public. [GitHub says self-hosted runners should almost never be used for public repositories](https://docs.github.com/en/actions/reference/security/secure-use), because a pull request can run code on them. On this machine that would reach the money data and the master key.
+- Release builds run only on GitHub's own machines. **No workflow in this repository may use a self-hosted runner.**
+- Before M9b, a Pi builds from source (`git pull`, then compose with `--build`). After it, `docker compose pull && docker compose up -d`.
+- Testing starts with **made-up data**. The real copy is a fresh install afterwards. Back up other apps on the Pi before the power-cut tests.
+
+### HTTPS only (15)
+
+- Caddy redirects plain HTTP that arrives **on the HTTPS port** ([`http_redirect`](https://caddyserver.com/docs/caddyfile/options)), so typing the address without `https` still works on any port.
+- A separate HTTP port, which only redirects, is published **only when HTTPS is on 443,** and can be turned off.
+- A redirect can't protect the first plain request: someone already on your network could answer it with a fake page. Pond's cookies are never sent over plain HTTP. A bookmark to the `https` address, and HSTS where it's on, close the gap.
+- Between Caddy and Pond, traffic is plain HTTP **on Docker's private network inside the Pi**. Pond's port isn't published.
+- In production, cookies are **always** `Secure`: `POND_COOKIE_SECURE=false` is ignored. (Today it is honoured.)
+
+### HSTS (16)
+
+- Pond **already** sends this header, through Helmet's defaults: one year, including subdomains.
+- It makes a browser use HTTPS for **every port on that hostname** ([RFC 6797](https://www.rfc-editor.org/rfc/rfc6797), sections 1 and 8.3). If another app on the Pi uses plain HTTP under the same name, a browser that has trusted Pond's certificate would try `https` for it too, and it would **stop working in that browser** for up to a year.
+- **The port Pond uses says nothing about what else shares the name.** Pond can have 443 while another app uses plain HTTP on another port. So Pond can't safely choose for itself, and the header is **off by default**. This changes what Pond sends today.
+- The install page says to turn it on if Pond is the only web app on that name, or every one of them uses `https`. It never includes subdomains.
+- Turning it off later doesn't make browsers forget at once. The page says so.
+- Browsers don't apply it to IP addresses.
+
+### Certificates (17)
+
+**No public authority issues certificates for `.local` names,** and a private address can't be validated for one either. A certificate your devices already trust needs a real, public name:
+
+| Option | What it needs | Costs and limits |
+|---|---|---|
+| **Caddy's own authority** (default) | Trust it once on each device | Free, works offline. The trust step is fiddly |
+| **Your own domain** with Let's Encrypt, proved through DNS | A domain, a DNS provider with an API, and a name pointing at the Pi's home address. No ports opened | The domain's fee. A DNS key stored on the Pi. The name appears in public certificate logs. The standard Caddy image has no DNS provider modules, so it means a custom build. Some routers block public names that point to home addresses. Renewal needs the internet |
+| **Tailscale** (`.ts.net` names) | Tailscale on the Pi and on every device | No domain needed, and [Caddy can fetch the certificate](https://tailscale.com/docs/integrations/web-servers/caddy/caddy-certificates). Machine and network names [become public](https://tailscale.com/docs/how-to/set-up-https-certificates). Adds a service Pond depends on, and how Caddy in Docker reaches it still needs testing |
+
+Let's Encrypt certificates are getting shorter: [64 days by default from February 2027, 45 from February 2028](https://letsencrypt.org/2025/12/02/from-90-to-45), so renewal must be automatic.
+
+Most households have neither a domain nor Tailscale, so the default stays. Tailscale is already under "Later" with remote access and passkeys; that's where trusted certificates fit best. A WibbitWorks service that hands out names and certificates isn't planned: it would have to be run for every household.
+
+### Development setup (18)
+
+`docker-compose.dev.yml` publishes ports 3210 and 5173 to the whole network, **over plain HTTP, with insecure cookies.** Anyone on the home network can reach the development copy and could read what is sent to it. **It will publish them to `127.0.0.1` only** (in M9a). To test from a phone, use the production setup.
 
 ## Sources
 
