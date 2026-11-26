@@ -31,6 +31,12 @@ export const pondLight: ThemeDefinition = {
     'on-warning': brand.deepNavy,
     error: brand.errorFill,
     'on-error': brand.deepNavy,
+    'error-text': '#B3261E',
+    // Vuetify's own fills; without these it puts white text on them, which fails.
+    info: '#2196F3',
+    'on-info': brand.deepNavy,
+    success: '#4CAF50',
+    'on-success': brand.deepNavy,
     link: brand.linkTeal,
     'money-in': '#1B6B2F',
     'money-out': '#B3261E',
@@ -39,6 +45,9 @@ export const pondLight: ThemeDefinition = {
     'chart-1': '#2A78D6',
     'chart-2': '#D9622B',
   },
+  // Muted text (subtitles, field labels) is faded twice inside lists and fields: high times
+  // medium. Vuetify's 0.6 medium is too faint there.
+  variables: { 'high-emphasis-opacity': 0.87, 'medium-emphasis-opacity': 0.78 },
 }
 
 export const pondDark: ThemeDefinition = {
@@ -56,10 +65,17 @@ export const pondDark: ThemeDefinition = {
     'on-warning': brand.deepNavy,
     error: brand.errorFill,
     'on-error': brand.deepNavy,
+    'error-text': '#FF9A9A',
+    // Vuetify's own fills; without these it puts white text on them, which fails.
+    info: '#2196F3',
+    'on-info': brand.deepNavy,
+    success: '#4CAF50',
+    'on-success': brand.deepNavy,
     link: '#7FD6BC',
     'money-in': '#7ED98F',
     'money-out': '#FF9A9A',
     'chart-1': '#3987E5',
     'chart-2': '#D95F28',
   },
+  variables: { 'high-emphasis-opacity': 1, 'medium-emphasis-opacity': 0.7 },
 }

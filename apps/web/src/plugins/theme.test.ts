@@ -13,6 +13,17 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+/** The colour seen when `fg` is drawn over `bg` at the given opacity. */
+function mix(fg: string, bg: string, alpha: number): string {
+  const channel = (i: number) =>
+    Math.round(
+      parseInt(fg.slice(i, i + 2), 16) * alpha + parseInt(bg.slice(i, i + 2), 16) * (1 - alpha),
+    )
+      .toString(16)
+      .padStart(2, '0')
+  return `#${[1, 3, 5].map(channel).join('')}`
+}
+
 // Function: pondLight / pondDark theme definitions (apps/web/src/plugins/theme.ts)
 // Inputs:   every text colour paired with the background it is drawn on, in both themes
 //           (e.g. on-primary on primary, link on background, money-in on surface)
@@ -29,6 +40,10 @@ describe.each([
     ['on-secondary', 'secondary'],
     ['on-warning', 'warning'],
     ['on-error', 'error'],
+    ['on-info', 'info'],
+    ['on-success', 'success'],
+    ['error-text', 'background'],
+    ['error-text', 'surface'],
     ['link', 'background'],
     ['link', 'surface'],
     ['money-in', 'background'],
@@ -38,5 +53,20 @@ describe.each([
   ]
   it.each(pairs)('%s on %s', (fg, bg) => {
     expect(contrast(c[fg]!, c[bg]!)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  // Inputs:   muted text (high-emphasis x medium-emphasis opacity, as in lists and fields) on a
+  //           card, on the page, and on a filled field on the page (4% tint, 9% when hovered)
+  // Expected: a contrast ratio of at least 4.5:1 on each
+  const v = theme.variables as Record<string, number>
+  const alpha = v['high-emphasis-opacity']! * v['medium-emphasis-opacity']!
+  it.each([
+    ['surface', 0],
+    ['background', 0],
+    ['background', 0.04],
+    ['background', 0.09],
+  ])('muted text on %s with a %s tint', (name, tint) => {
+    const bg = mix(c['on-surface']!, c[name]!, tint)
+    expect(contrast(mix(c['on-surface']!, bg, alpha), bg)).toBeGreaterThanOrEqual(4.5)
   })
 })

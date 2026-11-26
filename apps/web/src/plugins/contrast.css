@@ -1,0 +1,36 @@
+/*
+ * Shared fixes for the contrast rule (CLAUDE.md: WCAG AA, 4.5:1 for text).
+ * Vuetify draws these in the accent colour itself, which is too faint to read.
+ */
+
+/* Tonal alerts, chips and buttons keep their coloured tint; text and icons use the normal text colour. */
+.v-alert--variant-tonal > .v-alert__prepend,
+.v-alert--variant-tonal > .v-alert__content,
+.v-alert--variant-tonal > .v-alert__close,
+.v-chip--variant-tonal > .v-chip__content,
+.v-chip--variant-tonal > .v-chip__prepend,
+.v-chip--variant-tonal > .v-chip__append,
+.v-btn--variant-tonal > .v-btn__prepend,
+.v-btn--variant-tonal > .v-btn__content,
+.v-btn--variant-tonal > .v-btn__append {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+/* Red text (text buttons such as Delete, and .text-error) uses a shade made for text.
+   Solid red fills use .bg-error and are not affected. */
+.v-application .text-error,
+.v-overlay-container .text-error {
+  color: rgb(var(--v-theme-error-text)) !important;
+}
+
+/* Plain links, including links inside alerts. */
+.v-application a:not(.v-btn, .v-card, .v-list-item, .v-chip, .v-tab),
+.v-overlay-container a:not(.v-btn, .v-card, .v-list-item, .v-chip, .v-tab) {
+  color: rgb(var(--v-theme-link));
+}
+
+/* Inside an alert the tint lowers the link colour's contrast; the underline marks the link. */
+.v-application .v-alert a:not(.v-btn),
+.v-overlay-container .v-alert a:not(.v-btn) {
+  color: inherit;
+}

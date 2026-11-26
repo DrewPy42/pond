@@ -1,6 +1,6 @@
 # Backups and restore (M8): design
 
-**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end); M8b is not.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
+**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end). M8b's detailed design was approved 2026-11-25 and is not built.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
 
 A backup holds **everything**: all financial data, the files, and the master key that unlocks the encrypted fields. Restore **replaces** everything. Both need your explicit review.
 
@@ -159,3 +159,75 @@ Where the build adds to or differs from the text above:
 - **Restart in development:** the compose file has a restart policy, but the live-reload runner may leave the server stopped. Restarting the container applies the restore.
 - **Password reset** prints a temporary password but does not force a change at the next sign-in. Before M9: `pnpm --filter @pond/server pond admin reset-password <username>`.
 - **Compatibility test:** the real-`tar` check always runs. The real-`age` check needs `age` and `expect` and is skipped where either is missing.
+
+## M8b: detailed design (approved 2026-11-25)
+
+Adds to "M8b: rclone remotes" above, after reading the six services' code in rclone v1.76.0.
+
+### Decisions (all approved 2026-11-25)
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Add rclone to the image? | **Yes: v1.76.0** (MIT licence, released 2026-11-06) |
+| 2 | How is the download trusted? | **The SHA-256 for each architecture is written into the Dockerfile.** A different file fails the build. Nothing is fetched while Pond runs |
+| 3 | Which services and settings? | **Only the table below** |
+| 4 | S3 and B2 server addresses | **An S3 `endpoint` is allowed but must be `https`; home-network addresses are allowed** (a NAS running S3). B2 takes no custom address |
+| 5 | How many remotes? | **One**, with one folder |
+| 6 | Schedule | **One schedule sends the same checked backup to every destination that is on** (folder, remote or both). "Copies to keep" applies to each. A schedule needs at least one of them |
+| 7 | After a restore | **The remote is paused until an admin turns it back on** |
+
+### What the source shows
+
+- **`env_auth` is a way to run programs.** With it, the S3 backend loads Amazon's standard credential files and the profile and file named in the settings. Those files can name a command to run (`credential_process`, a feature of Amazon's library). Google Drive has `env_auth` too.
+- **Some settings read any file** on the server: Drive's `service_account_file`, Box's `box_config_file`, S3's `shared_credentials_file`.
+- **`auth_url` and `token_url` redirect sign-in.** A changed `token_url` would send the login token and app secret to another server.
+- **Settings can arrive outside the file,** through `RCLONE_*` environment variables.
+
+### Accepted settings
+
+| Service | Settings |
+|---|---|
+| `drive` | `client_id`, `client_secret`, `token`, `scope`, `root_folder_id`, `team_drive` |
+| `dropbox` | `client_id`, `client_secret`, `token` |
+| `box` | `client_id`, `client_secret`, `token`, `box_sub_type`, `root_folder_id` |
+| `onedrive` | `client_id`, `client_secret`, `token`, `drive_id`, `drive_type`, `region`, `tenant` |
+| `s3` | `provider`, `access_key_id`, `secret_access_key`, `region`, `endpoint`, `location_constraint`, `storage_class`, `server_side_encryption`, `acl` (`private` only), `force_path_style`, `no_check_bucket` |
+| `b2` | `account`, `key` |
+
+`env_auth = false` is accepted and dropped, because a pasted S3 setup often has it. Anything else is refused, naming the setting but never its value. The paste must hold exactly one remote, and an encrypted rclone config is refused. Pond **writes a new config file from the checked values**; the pasted text is never handed to rclone. The list gets its final check against rclone itself during the build, and any change to it comes back to you.
+
+### Running rclone
+
+- No shell: a fixed argument list, with the remote always named `pond`.
+- A **bare environment:** no `RCLONE_*` or cloud variables, and an empty temporary home folder, so there are no credential files to find.
+- Only three commands: upload one file (`copyto`), list the folder (`lsjson`) and delete one named file (`deletefile`). Never `sync`, `purge`, `delete`, `serve` or `rcd`.
+- The folder allows letters, numbers, spaces, `_ - .` and `/`, with no `..` and no part starting with `-`. For S3 and B2 its first part is the bucket.
+- A time limit on every run. rclone's own error text can hold addresses or tokens, so it is **never logged or shown**; Pond turns it into a few plain reasons.
+
+### Tokens
+
+The config file is private, lives in Pond's temporary folder and is deleted after each run (and at every start). After **every** run, including a failed one, Pond reads it back, checks it against the same list and saves it encrypted if it changed: some services issue a new token each time and retire the old one. If power fails in between, the admin may have to paste the setup again. The stored setup is added to restore's key check.
+
+### Backing up
+
+- Saving a remote (password re-check) first lists the folder, so a bad setup fails straight away.
+- Pond makes and checks the backup in its temporary folder, uploads it, then confirms that the remote lists it at the same size. It is not downloaded again. This **needs free space for one backup**.
+- Old copies: the same own-name rule as the folder, only after the new upload is confirmed. Some services keep deleted files in a bin for a while, which still uses space.
+- Each destination records its own success and failure, so one working can't hide the other failing.
+- Pausing after a restore matters because a restored copy has the same install id. Run beside the original, it would delete the original's old backups. The saved token may also be out of date by then.
+
+### Getting the setup text
+
+rclone's sign-in needs a web browser, so it is done on your own computer: install rclone, run `rclone config`, then `rclone config show <name>` and paste the result. The screen and the install docs say so.
+
+### Cost
+
+- The image grows by rclone's program (its download is about 30 MB).
+- Pond now has to keep rclone current. Its eight most recent security advisories are all fixed as of v1.76.0. Judging by their titles, they concern its server modes or services Pond doesn't offer. Updating means changing the version and both checksums, and rechecking the settings list.
+- **Also approved:** downloading `rclone-v1.76.0-osx-arm64.zip` from rclone's GitHub releases for testing on the development Mac, checked against its checksum and kept out of the repository.
+- Development outside Docker finds rclone through `POND_RCLONE_PATH`. Without it, the remote option shows as unavailable.
+
+### Tests
+
+Hostile pastes (each dangerous setting, a second remote, tricks with line breaks, encrypted configs), the exact arguments and environment of every run (with a fake runner), token write-back after success and failure, retention, per-destination warnings and the pause after restore. With a real rclone, tests use rclone's local-folder type, which only the test code can create. **No test signs in to a real cloud service,** so each service you use needs one real check by you.
+
