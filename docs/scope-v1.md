@@ -56,7 +56,8 @@ Each milestone ends with working, tested software.
 | M7 | Reports | Cash flow, spending by category, net worth over time, LilyPad reports listed in core Reports |
 | M8a | Backups | Backup format, schedule, download and folder, retention, safety copies, full-overwrite restore (also on a new install), password reset command |
 | M8b | Backup remotes | rclone destinations, with allow-listed remote types and settings |
-| M9 | Ship | Production Docker images (arm64 + amd64), Caddy config, install docs, update-available notice |
+| M9a | Installable | Production image that serves the web app, runs as a normal user and builds on the Pi; compose with Caddy HTTPS; audit log screen; licence files; install docs. See `ship-design.md` |
+| M9b | Releases | Tested and signed arm64 + amd64 images, versions, update-available notice. Version 1.0.0 only after the checks on a real Pi |
 
 ## Open items to settle during the build
 
