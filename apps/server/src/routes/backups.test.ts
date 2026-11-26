@@ -286,7 +286,7 @@ describe('BackupService.runDue() and warnings', () => {
     expect(await w.env.ctx.backups.runDue()).toBe(true)
     expect(await w.env.ctx.backups.runDue()).toBe(false)
     expect(await w.backups()).toHaveLength(1)
-    expect(w.env.ctx.backups.warning()).toBeNull()
+    expect(w.env.ctx.backups.warnings()).toEqual([])
   })
 
   /**
@@ -302,14 +302,13 @@ describe('BackupService.runDue() and warnings', () => {
     await expect(w.env.ctx.backups.runDue()).rejects.toMatchObject({
       code: 'folder_marker_missing',
     })
-    expect(w.env.ctx.backups.warning()).toMatchObject({
-      kind: 'failed',
-      reason: 'folder_marker_missing',
-    })
+    expect(w.env.ctx.backups.warnings()).toMatchObject([
+      { destination: 'folder', kind: 'failed', reason: 'folder_marker_missing' },
+    ])
     await fs.writeFile(marker, '')
     w.env.advance(1000)
     await w.env.ctx.backups.backupToFolder(null)
-    expect(w.env.ctx.backups.warning()).toBeNull()
+    expect(w.env.ctx.backups.warnings()).toEqual([])
   })
 
   /**
@@ -320,20 +319,22 @@ describe('BackupService.runDue() and warnings', () => {
     const w = await world()
     await w.settings({}, { enabled: true })
     w.env.advance(2 * DAY)
-    expect(w.env.ctx.backups.warning()).toBeNull()
+    expect(w.env.ctx.backups.warnings()).toEqual([])
     w.env.advance(2 * DAY)
-    expect(w.env.ctx.backups.warning()).toEqual({ kind: 'stale', lastSuccessAt: null })
+    expect(w.env.ctx.backups.warnings()).toEqual([
+      { destination: 'folder', kind: 'stale', lastSuccessAt: null },
+    ])
 
     const weekly = await world()
     await weekly.settings({}, { enabled: true, frequency: 'weekly' })
     weekly.env.advance(4 * DAY)
-    expect(weekly.env.ctx.backups.warning()).toBeNull()
+    expect(weekly.env.ctx.backups.warnings()).toEqual([])
     weekly.env.advance(7 * DAY)
-    expect(weekly.env.ctx.backups.warning()).toMatchObject({ kind: 'stale' })
+    expect(weekly.env.ctx.backups.warnings()).toMatchObject([{ kind: 'stale' }])
 
     const off = await world()
     off.env.advance(30 * DAY)
-    expect(off.env.ctx.backups.warning()).toBeNull()
+    expect(off.env.ctx.backups.warnings()).toEqual([])
   })
 
   /**
@@ -345,7 +346,7 @@ describe('BackupService.runDue() and warnings', () => {
     expect((await w.settings({}, { enabled: true })).body.error).toBe('passphrase_not_set')
     const x = await world()
     expect((await x.settings({ folderEnabled: false }, { enabled: true })).body.error).toBe(
-      'folder_required',
+      'destination_required',
     )
   })
 })

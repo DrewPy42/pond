@@ -45,7 +45,8 @@ One household runs one Pond install on its own hardware. Pond pulls read-only ba
   - `files/` (uploads, such as Business documents)
   - `backups/` (automatic safety copies; they never leave this volume)
   - `restore/` and `tmp/` (only while a restore or backup is under way)
-- A second mount, `/backups`, is the only folder backups are written to.
+- A second mount, `/backups`, is the only folder on this computer backups are written to.
+- The image includes rclone (`POND_RCLONE_PATH`) for backups to online storage.
 - **v1 is home-network only.** No port forwarding. Remote access (Tailscale) comes later.
 - **Updates in v1:** Pond checks the release feed and shows "update available." The user runs the documented command (`docker compose pull && docker compose up -d`). Pond takes a safety copy automatically on startup before running new migrations. One-click updates come later.
 

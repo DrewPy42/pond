@@ -17,6 +17,8 @@ const envSchema = z.object({
   POND_DEV_PADS: z.enum(['true', 'false']).optional(),
   /** The one folder backups may be written to (a NAS share or USB drive mounted by Docker). */
   POND_BACKUP_DIR: z.string().optional(),
+  /** Full path to rclone, for backups to online storage. Unset: that option is unavailable. */
+  POND_RCLONE_PATH: z.string().optional(),
   /** Largest backup file a restore accepts, in MB. */
   POND_RESTORE_MAX_MB: z.coerce.number().int().min(1).max(1_000_000).default(2048),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -43,6 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     filesDir: path.join(dataDir, 'files'),
     keyPath: path.join(dataDir, 'keys', 'master.key'),
     backupDir: e.POND_BACKUP_DIR ? path.resolve(e.POND_BACKUP_DIR) : null,
+    rclonePath: e.POND_RCLONE_PATH ? path.resolve(e.POND_RCLONE_PATH) : null,
     restoreMaxBytes: e.POND_RESTORE_MAX_MB * 1024 * 1024,
   }
 }

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Schedule } from '@pond/sdk'
-import type { BackupSchedule, BackupView, BackupWarning } from '@pond/shared'
+import type { BackupSchedule, BackupView, BackupWarning, ScheduledDestination } from '@pond/shared'
 import { recordAudit } from '../audit.js'
 import type { Crypto } from '../crypto/index.js'
 import { isDue } from '../lilypads/schedule.js'
@@ -13,14 +13,28 @@ import { BackupError } from './errors.js'
 import type { GatedFileStore } from './fileGate.js'
 import type { BackupLock } from './lock.js'
 import type { BackupPaths } from './paths.js'
+import type { Rclone } from './remote/rclone.js'
+import {
+  REMOTE_NAMES,
+  checkRemoteFolder,
+  parseRemoteSetup,
+  writeRemoteConfig,
+  type RemoteSetup,
+  type RemoteType,
+} from './remote/setup.js'
+import { withRemote, type RemoteSession } from './remote/store.js'
 import {
   KEYS,
   readFolderEnabled,
   readKeep,
   readPassphraseEnc,
+  readRemoteEnc,
+  readRemoteInfo,
   readSchedule,
   readStatus,
   writeStatus,
+  type RemoteInfo,
+  type ScheduledRun,
 } from './settings.js'
 import type { BackupDb } from './types.js'
 
@@ -40,6 +54,8 @@ export interface BackupDeps {
   paths: BackupPaths
   gate: Pick<GatedFileStore, 'hold'>
   lock: BackupLock
+  /** Uploads to online storage. */
+  rclone: Rclone
   now: () => Date
   newId: () => string
   timeZone: string
@@ -92,6 +108,7 @@ export class BackupService {
     const { settings } = this.d.repos
     const status = readStatus(settings)
     const enabled = readFolderEnabled(settings)
+    const remote = readRemoteInfo(settings)
     return {
       passphraseSet: readPassphraseEnc(settings) !== null,
       schedule: readSchedule(settings),
@@ -102,27 +119,66 @@ export class BackupService {
         enabled,
         connected: enabled && (await this.markerPresent()),
       },
+      remote: {
+        available: this.d.rclone.available(),
+        configured: remote !== null,
+        service: remote ? (REMOTE_NAMES[remote.type as RemoteType] ?? remote.type) : null,
+        folder: remote?.folder ?? null,
+        enabled: remote?.enabled ?? false,
+        paused: remote?.paused ?? false,
+      },
       lastFolderBackupAt: status.folderSuccessAt ?? null,
+      lastRemoteBackupAt: status.remoteSuccessAt ?? null,
       lastDownloadAt: status.downloadSuccessAt ?? null,
-      lastScheduled: status.lastScheduled ?? null,
       running: this.running,
       restorePending: this.d.lock.restorePending,
-      warning: this.warning(),
+      warnings: this.warnings(),
     }
   }
 
-  /** Only for a schedule that is on: a backup that fails unnoticed is the real risk. */
-  warning(): BackupWarning | null {
-    const schedule = readSchedule(this.d.repos.settings)
-    if (!schedule.enabled) return null
+  /** Where scheduled backups go right now. A paused remote gets nothing. */
+  private destinations(): ScheduledDestination[] {
+    const remote = readRemoteInfo(this.d.repos.settings)
+    return [
+      ...(readFolderEnabled(this.d.repos.settings) ? (['folder'] as const) : []),
+      ...(remote?.enabled && !remote.paused ? (['remote'] as const) : []),
+    ]
+  }
+
+  /**
+   * A paused remote, and for a schedule that is on, any destination failing or falling behind:
+   * a backup that fails unnoticed is the real risk.
+   */
+  warnings(): BackupWarning[] {
+    const { settings } = this.d.repos
+    const out: BackupWarning[] = []
+    const remote = readRemoteInfo(settings)
+    if (remote?.enabled && remote.paused) out.push({ destination: 'remote', kind: 'paused' })
+    const schedule = readSchedule(settings)
+    if (!schedule.enabled) return out
+    const s = readStatus(settings)
+    for (const destination of this.destinations()) {
+      const success = destination === 'folder' ? s.folderSuccessAt : s.remoteSuccessAt
+      const last = s.lastScheduled?.[destination]
+      if (last && !last.ok && !(success && success > last.at)) {
+        const reason = last.reason ?? 'backup_failed'
+        out.push({ destination, kind: 'failed', at: last.at, reason })
+        continue
+      }
+      const since = success ?? s.since?.[destination]
+      if (since && this.d.now().getTime() - Date.parse(since) > STALE_AFTER_MS[schedule.frequency])
+        out.push({ destination, kind: 'stale', lastSuccessAt: success ?? null })
+    }
+    return out
+  }
+
+  /** A destination that was just turned on is judged from now, not from its past. */
+  private startCounting(destination: ScheduledDestination): void {
     const s = readStatus(this.d.repos.settings)
-    const last = s.lastScheduled
-    if (last && !last.ok && !(s.folderSuccessAt && s.folderSuccessAt > last.at))
-      return { kind: 'failed', at: last.at, reason: last.reason ?? 'backup_failed' }
-    const since = s.folderSuccessAt ?? s.scheduleSince
-    if (since && this.d.now().getTime() - Date.parse(since) > STALE_AFTER_MS[schedule.frequency])
-      return { kind: 'stale', lastSuccessAt: s.folderSuccessAt ?? null }
-    return null
+    writeStatus(this.d.repos.settings, {
+      since: { ...s.since, [destination]: this.d.now().toISOString() },
+      lastScheduled: { ...s.lastScheduled, [destination]: undefined },
+    })
   }
 
   /** The passphrase is stored encrypted, never shown again and never logged or audited. */
@@ -142,8 +198,11 @@ export class BackupService {
     if (next.schedule.enabled) {
       if (readPassphraseEnc(settings) === null)
         throw new BackupError('passphrase_not_set', 'Set a backup passphrase first.')
-      if (!next.folderEnabled)
-        throw new BackupError('folder_required', 'Scheduled backups need the backup folder.')
+      if (!next.folderEnabled && !readRemoteInfo(settings)?.enabled)
+        throw new BackupError(
+          'destination_required',
+          'Scheduled backups need the backup folder or online storage.',
+        )
     }
     // Marked when the folder is turned on (or reconnected), while the admin says it is there.
     if (next.folderEnabled && !readFolderEnabled(settings)) {
@@ -159,7 +218,9 @@ export class BackupService {
       }
     }
     const before = readSchedule(settings)
+    const folderWasOn = readFolderEnabled(settings)
     this.d.repos.transaction(() => {
+      if (next.folderEnabled && !folderWasOn) this.startCounting('folder')
       settings.set('global', '', KEYS.folderEnabled, next.folderEnabled)
       settings.set('global', '', KEYS.schedule, next.schedule)
       settings.set('global', '', KEYS.keep, next.keep)
@@ -168,7 +229,7 @@ export class BackupService {
         // Starts counting now, so turning it on doesn't run a backup straight away.
         writeStatus(settings, {
           scheduleRanAt: at,
-          ...(before.enabled ? {} : { scheduleSince: at, lastScheduled: undefined }),
+          ...(before.enabled ? {} : { since: { folder: at, remote: at }, lastScheduled: {} }),
         })
       }
       this.audit(actorId, 'backup.settings_changed', {
@@ -179,6 +240,100 @@ export class BackupService {
       })
     })
   }
+
+  // ---------- Online storage ----------
+
+  private storedRemote(): RemoteSetup {
+    const enc = readRemoteEnc(this.d.repos.settings)
+    if (enc === null)
+      throw new BackupError('remote_not_set_up', 'Online storage is not set up yet.')
+    return parseRemoteSetup(this.d.crypto.decrypt(enc))
+  }
+
+  private storeRemote(setup: RemoteSetup): void {
+    const enc = this.d.crypto.encrypt(writeRemoteConfig(setup))
+    this.d.repos.settings.set('global', '', KEYS.remote, enc)
+  }
+
+  private useRemote<T>(
+    setup: RemoteSetup,
+    onChange: (next: RemoteSetup) => void,
+    use: (session: RemoteSession) => Promise<T>,
+  ): Promise<T> {
+    const { rclone, paths } = this.d
+    return withRemote({ rclone, tmpDir: paths.tmpDir, setup, onChange }, use)
+  }
+
+  /**
+   * Saves the remote. Turning it on (or back on after a restore) lists the folder first, so a bad
+   * setup fails straight away. Without `setup`, the stored one is kept.
+   */
+  async saveRemote(
+    actorId: string,
+    next: { setup?: string; folder: string; enabled: boolean },
+  ): Promise<void> {
+    const folder = checkRemoteFolder(next.folder)
+    const release = this.d.lock.acquire()
+    try {
+      const { settings } = this.d.repos
+      const pasted = next.setup !== undefined
+      let setup = next.setup === undefined ? this.storedRemote() : parseRemoteSetup(next.setup)
+      if (next.enabled)
+        await this.useRemote(
+          setup,
+          (changed) => {
+            setup = changed
+            // A retired token must not be lost, even if this test goes on to fail.
+            if (!pasted) this.storeRemote(changed)
+          },
+          (session) => session.list(folder),
+        )
+      const before = readRemoteInfo(settings)
+      const info: RemoteInfo = {
+        type: setup.type,
+        folder,
+        enabled: next.enabled,
+        paused: next.enabled ? false : (before?.paused ?? false),
+      }
+      this.d.repos.transaction(() => {
+        this.storeRemote(setup)
+        settings.set('global', '', KEYS.remoteInfo, info)
+        if (info.enabled && !(before?.enabled && !before.paused)) this.startCounting('remote')
+        this.stopScheduleWithNowhereToGo()
+        this.audit(actorId, 'backup.settings_changed', {
+          remote: info.type,
+          enabled: info.enabled,
+          newSetup: pasted,
+        })
+      })
+    } finally {
+      release()
+    }
+  }
+
+  /** Forgets the remote. Backups already stored there stay where they are. */
+  removeRemote(actorId: string): void {
+    const release = this.d.lock.acquire()
+    try {
+      this.d.repos.transaction(() => {
+        // Covers both remote settings, and nothing else starts this way.
+        this.d.repos.settings.deleteByPrefix(KEYS.remote)
+        this.stopScheduleWithNowhereToGo()
+        this.audit(actorId, 'backup.settings_changed', { remote: 'removed' })
+      })
+    } finally {
+      release()
+    }
+  }
+
+  private stopScheduleWithNowhereToGo(): void {
+    const { settings } = this.d.repos
+    const schedule = readSchedule(settings)
+    if (schedule.enabled && !readFolderEnabled(settings) && !readRemoteInfo(settings)?.enabled)
+      settings.set('global', '', KEYS.schedule, { ...schedule, enabled: false })
+  }
+
+  // ---------- Making backups ----------
 
   private fileName(at: Date): string {
     const stamp = at
@@ -206,51 +361,146 @@ export class BackupService {
     return bytes
   }
 
-  /** Runs one backup at a time and audits it, whether it works or not. */
-  private async attempt<T>(
-    actorId: string | null,
-    destination: 'folder' | 'download',
-    fn: (at: Date) => Promise<{ bytes: number; result: T }>,
-  ): Promise<T> {
+  /** One backup or restore step at a time. */
+  private async locked<T>(fn: () => Promise<T>): Promise<T> {
     const release = this.d.lock.acquire()
     this.running = true
-    const trigger = actorId === null ? 'schedule' : 'manual'
     try {
-      const at = this.d.now()
-      const { bytes, result } = await fn(at)
-      writeStatus(
-        this.d.repos.settings,
-        destination === 'folder'
-          ? { folderSuccessAt: at.toISOString() }
-          : { downloadSuccessAt: at.toISOString() },
-      )
-      this.audit(actorId, 'backup.created', { destination, trigger, bytes })
-      return result
-    } catch (e) {
-      const known = e instanceof BackupError ? e : new BackupError('backup_failed')
-      this.audit(actorId, 'backup.failed', { destination, trigger, reason: known.code })
-      throw e
+      return await fn()
     } finally {
       this.running = false
       release()
     }
   }
 
-  backupToFolder(actorId: string | null): Promise<{ filename: string }> {
-    return this.attempt(actorId, 'folder', async (at) => {
-      if (!readFolderEnabled(this.d.repos.settings) || !(await this.folderAvailable()))
-        throw new BackupError('folder_not_available', 'The backup folder is not available.')
-      // Without this, a missing USB drive would quietly fill the SD card instead.
-      if (!(await this.markerPresent()))
-        throw new BackupError(
-          'folder_marker_missing',
-          "The backup folder's marker is missing. Is the drive or share connected?",
-        )
-      const filename = this.fileName(at)
-      const bytes = await this.make(path.join(this.d.paths.folderDir!, filename), at)
-      await this.prune(filename)
-      return { bytes, result: { filename } }
+  /** Records and audits one destination's backup, whether it works or not. */
+  private async record<T extends { bytes: number }>(
+    actorId: string | null,
+    destination: ScheduledDestination | 'download',
+    at: Date,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const trigger = actorId === null ? 'schedule' : 'manual'
+    try {
+      const done = await fn()
+      writeStatus(this.d.repos.settings, { [`${destination}SuccessAt`]: at.toISOString() })
+      this.audit(actorId, 'backup.created', { destination, trigger, bytes: done.bytes })
+      return done
+    } catch (e) {
+      const known = e instanceof BackupError ? e : new BackupError('backup_failed')
+      this.audit(actorId, 'backup.failed', { destination, trigger, reason: known.code })
+      throw e
+    }
+  }
+
+  private attempt<T extends { bytes: number }>(
+    actorId: string | null,
+    destination: ScheduledDestination | 'download',
+    fn: (at: Date) => Promise<T>,
+  ): Promise<T> {
+    return this.locked(() => {
+      const at = this.d.now()
+      return this.record(actorId, destination, at, () => fn(at))
     })
+  }
+
+  async backupToFolder(actorId: string | null): Promise<{ filename: string }> {
+    const { filename } = await this.attempt(actorId, 'folder', (at) => this.writeToFolder(at))
+    return { filename }
+  }
+
+  async backupToRemote(actorId: string | null): Promise<{ filename: string }> {
+    const { filename } = await this.attempt(actorId, 'remote', (at) => this.sendToRemote(at, null))
+    return { filename }
+  }
+
+  private async writeToFolder(at: Date) {
+    if (!readFolderEnabled(this.d.repos.settings) || !(await this.folderAvailable()))
+      throw new BackupError('folder_not_available', 'The backup folder is not available.')
+    // Without this, a missing USB drive would quietly fill the SD card instead.
+    if (!(await this.markerPresent()))
+      throw new BackupError(
+        'folder_marker_missing',
+        "The backup folder's marker is missing. Is the drive or share connected?",
+      )
+    const filename = this.fileName(at)
+    const file = path.join(this.d.paths.folderDir!, filename)
+    const bytes = await this.make(file, at)
+    await this.prune(filename)
+    return { bytes, filename, file }
+  }
+
+  /**
+   * Uploads a checked backup: `made`, if this run already wrote one, or a new one in the
+   * temporary folder. It counts only once the remote lists it at the same size.
+   */
+  private async sendToRemote(at: Date, made: string | null) {
+    const info = readRemoteInfo(this.d.repos.settings)
+    if (!info?.enabled)
+      throw new BackupError('remote_not_set_up', 'Online storage is not turned on.')
+    if (info.paused)
+      throw new BackupError('remote_paused', 'Online storage is paused. Turn it back on first.')
+    if (!this.d.rclone.available())
+      throw new BackupError('remote_not_available', "This Pond doesn't have rclone installed.")
+    const setup = this.storedRemote()
+    const filename = this.fileName(at)
+    await fs.mkdir(this.d.paths.tmpDir, { recursive: true, mode: 0o700 })
+    const work = await fs.mkdtemp(path.join(this.d.paths.tmpDir, 'upload-'))
+    try {
+      let source = made
+      if (source === null) {
+        source = path.join(work, filename)
+        await this.make(source, at)
+      }
+      const file = source
+      const bytes = (await fs.stat(file)).size
+      await this.useRemote(
+        setup,
+        (changed) => this.storeRemote(changed),
+        async (session) => {
+          await session.upload(file, info.folder, filename)
+          const stored = await session.list(info.folder)
+          if (!stored.some((f) => f.name === filename && f.size === bytes))
+            throw new BackupError(
+              'remote_upload_unconfirmed',
+              "The storage service didn't confirm the upload.",
+            )
+          const names = stored.map((f) => f.name)
+          await this.pruneRemote(session, info.folder, names, filename)
+        },
+      )
+      return { bytes, filename }
+    } finally {
+      await fs.rm(work, { recursive: true, force: true })
+    }
+  }
+
+  /** Matches only the names this install gives its backups. */
+  private ownName(): string {
+    return `pond-backup-${this.instanceId()}-\\d{8}-\\d{6}Z\\.pond`
+  }
+
+  /** This install's older copies beyond the number to keep, never the one just made. */
+  private surplus(names: string[], justMade: string): string[] {
+    const own = new RegExp(`^${this.ownName()}$`)
+    return names
+      .filter((n) => own.test(n) && n !== justMade)
+      .sort()
+      .reverse()
+      .slice(readKeep(this.d.repos.settings) - 1)
+  }
+
+  private async pruneRemote(
+    session: RemoteSession,
+    folder: string,
+    names: string[],
+    justMade: string,
+  ): Promise<void> {
+    try {
+      for (const name of this.surplus(names, justMade)) await session.delete(folder, name)
+    } catch {
+      // The new backup is safely there; old copies are tidied next time.
+    }
   }
 
   /**
@@ -259,15 +509,10 @@ export class BackupService {
    */
   private async prune(justMade: string): Promise<void> {
     const dir = this.d.paths.folderDir!
-    const own = `pond-backup-${this.instanceId()}-\\d{8}-\\d{6}Z\\.pond`
     try {
       const names = await fs.readdir(dir)
-      const older = names
-        .filter((n) => new RegExp(`^${own}$`).test(n) && n !== justMade)
-        .sort()
-        .reverse()
-      const leftovers = names.filter((n) => new RegExp(`^${own}\\.[0-9a-f]{8}\\.partial$`).test(n))
-      for (const n of [...older.slice(readKeep(this.d.repos.settings) - 1), ...leftovers])
+      const leftover = new RegExp(`^${this.ownName()}\\.[0-9a-f]{8}\\.partial$`)
+      for (const n of [...this.surplus(names, justMade), ...names.filter((x) => leftover.test(x))])
         await fs.rm(path.join(dir, n), { force: true })
     } catch {
       // The backup itself is good; old copies are tidied next time.
@@ -275,8 +520,8 @@ export class BackupService {
   }
 
   /** Makes a backup to be saved by the browser. Fetch it once with `takeDownload`. */
-  backupForDownload(actorId: string, sessionId: string): Promise<{ downloadId: string }> {
-    return this.attempt(actorId, 'download', async (at) => {
+  async backupForDownload(actorId: string, sessionId: string): Promise<{ downloadId: string }> {
+    const { downloadId } = await this.attempt(actorId, 'download', async (at) => {
       await this.expireDownloads(true)
       const dir = path.join(this.d.paths.tmpDir, 'downloads')
       await fs.mkdir(dir, { recursive: true, mode: 0o700 })
@@ -290,8 +535,9 @@ export class BackupService {
         filename,
         expiresAt: at.getTime() + DOWNLOAD_LIFETIME_MS,
       })
-      return { bytes, result: { downloadId } }
+      return { bytes, downloadId }
     })
+    return { downloadId }
   }
 
   private async expireDownloads(all = false): Promise<void> {
@@ -334,19 +580,46 @@ export class BackupService {
         : { weekly: { day: schedule.weekday as Weekday, at: schedule.time } }
     if (!isDue(when, new Date(lastRun), now, this.d.timeZone)) return false
     writeStatus(settings, { scheduleRanAt: now.toISOString() }) // first, so a crash won't loop
+    const destinations = this.destinations()
+    if (destinations.length === 0) return false
     try {
-      await this.backupToFolder(null)
-      writeStatus(settings, { lastScheduled: { at: now.toISOString(), ok: true } })
+      await this.locked(() => this.runScheduled(destinations, now))
     } catch (e) {
       // Another backup or restore step is running: try again at the next check.
       if (e instanceof BackupError && e.code === 'busy') {
         writeStatus(settings, { scheduleRanAt: lastRun })
         return false
       }
-      const reason = e instanceof BackupError ? e.code : 'backup_failed'
-      writeStatus(settings, { lastScheduled: { at: now.toISOString(), ok: false, reason } })
       throw e
     }
     return true
+  }
+
+  /**
+   * Sends one backup to every destination that is on. One failing doesn't stop the other; the
+   * first failure is thrown afterwards so it gets logged.
+   */
+  private async runScheduled(destinations: ScheduledDestination[], at: Date): Promise<void> {
+    const failures: unknown[] = []
+    let made: string | null = null
+    const note = (destination: ScheduledDestination, run: ScheduledRun) => {
+      const { lastScheduled } = readStatus(this.d.repos.settings)
+      writeStatus(this.d.repos.settings, {
+        lastScheduled: { ...lastScheduled, [destination]: run },
+      })
+    }
+    for (const destination of destinations) {
+      try {
+        if (destination === 'folder')
+          made = (await this.record(null, 'folder', at, () => this.writeToFolder(at))).file
+        else await this.record(null, 'remote', at, () => this.sendToRemote(at, made))
+        note(destination, { at: at.toISOString(), ok: true })
+      } catch (e) {
+        const reason = e instanceof BackupError ? e.code : 'backup_failed'
+        note(destination, { at: at.toISOString(), ok: false, reason })
+        failures.push(e)
+      }
+    }
+    if (failures.length) throw failures[0]
   }
 }

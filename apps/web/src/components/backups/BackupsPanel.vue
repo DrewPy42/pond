@@ -5,8 +5,10 @@ import { api } from '../../api'
 import { useAction } from '../../composables/useAction'
 import { useReauthRetry } from '../../composables/withReauth'
 import { FormDialog } from '../common'
+import RemoteCard from './RemoteCard.vue'
 import RestoreSteps from './RestoreSteps.vue'
 import { warningText, when } from './backupText'
+import { backupWarnings } from './warnings'
 
 const MIN_LENGTH = 12
 const withReauth = useReauthRetry()
@@ -33,6 +35,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 function show(next: BackupView) {
   view.value = next
+  backupWarnings.value = next.warnings
   folderEnabled.value = next.folder.enabled
   keep.value = next.keep
   schedule.value = { ...next.schedule }
@@ -42,6 +45,10 @@ async function load() {
   if (r) show(r)
 }
 onMounted(load)
+
+const remoteOn = computed(() => view.value?.remote.enabled ?? false)
+/** The schedule and number of copies matter once backups have somewhere to go. */
+const hasDestination = computed(() => folderEnabled.value || remoteOn.value)
 
 const changed = computed(
   () =>
@@ -89,7 +96,7 @@ async function save(reconnect = false) {
       method: 'PUT',
       body: { folderEnabled: enabled, keep: Number(keep.value), schedule: s },
     })
-  const wanted = { ...schedule.value, enabled: folderEnabled.value && schedule.value.enabled }
+  const wanted = { ...schedule.value, enabled: hasDestination.value && schedule.value.enabled }
   const r = await run(() =>
     withReauth(async () => {
       // Turning the folder off and on again writes its marker afresh.
@@ -138,8 +145,14 @@ async function backUp(destination: 'download' | 'folder') {
   <p class="text-body-2 text-medium-emphasis mb-3">
     A backup holds everything in Pond, encrypted with a passphrase only backups use.
   </p>
-  <v-alert v-if="view?.warning" type="warning" density="compact" class="mb-3">
-    {{ warningText(view.warning) }}
+  <v-alert
+    v-for="w in view?.warnings ?? []"
+    :key="`${w.destination}-${w.kind}`"
+    type="warning"
+    density="compact"
+    class="mb-3"
+  >
+    {{ warningText(w) }}
   </v-alert>
   <v-alert v-if="error && !passphraseOpen" type="error" class="mb-3">{{ error }}</v-alert>
   <v-alert v-if="done" type="success" color="primary" density="compact" class="mb-3">{{
@@ -193,8 +206,13 @@ async function backUp(destination: 'download' | 'folder') {
       </v-card-actions>
     </v-card>
 
+    <RemoteCard :view="view" @updated="show" />
+
     <v-card border flat class="mb-3">
       <v-card-title class="text-subtitle-1">Backup folder and schedule</v-card-title>
+      <v-card-subtitle class="text-wrap">
+        One schedule covers the folder and online storage, whichever are on.
+      </v-card-subtitle>
       <v-card-text>
         <p v-if="!view.folder.available" class="mb-2">
           No backup folder is set up. To use a USB drive or network share, mount it at
@@ -221,7 +239,7 @@ async function backUp(destination: 'download' | 'folder') {
           :disabled="!view.folder.available && !view.folder.enabled"
           hide-details
         />
-        <template v-if="folderEnabled">
+        <template v-if="hasDestination">
           <v-switch
             v-model="schedule.enabled"
             color="secondary"
