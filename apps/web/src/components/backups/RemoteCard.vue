@@ -162,15 +162,17 @@ async function backUp() {
     @update:model-value="!$event && closeForm()"
     @submit="save"
   >
-    <p class="mb-2">The sign-in happens on your own computer, because it needs a web browser:</p>
+    <p class="mb-2">
+      Pond has its own copy of rclone for uploading, but it can't open a web browser to sign in to
+      your storage. So you set that up once on your own computer, then give Pond the result.
+    </p>
+    <p class="mb-1">On a computer with a web browser (your everyday one is fine):</p>
     <ol class="pl-5 mb-3">
-      <li>Install <strong>rclone</strong> from rclone.org.</li>
-      <li>Run <code>rclone config</code> and add your storage.</li>
-      <li>
-        Run <code>rclone config show NAME</code>, using the name you gave it, and paste everything
-        it prints below.
-      </li>
+      <li>Install rclone from rclone.org.</li>
+      <li>Run <code>rclone config</code> and add your storage. Give it any name.</li>
+      <li>Run <code>rclone config show NAME</code>, using that name.</li>
     </ol>
+    <p class="mb-3">Then paste everything it prints below.</p>
     <v-textarea
       v-model="setup"
       :label="remote.configured ? 'New setup (leave empty to keep the current one)' : 'Setup'"
