@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import type { BackupView, BackupWarning } from '@pond/shared'
-import { onMounted, ref, watch } from 'vue'
+import type { BackupView } from '@pond/shared'
+import { onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../../api'
 import { warningText } from './backupText'
+import { backupWarnings } from './warnings'
 
 /** For admins: a backup that fails unnoticed is the real risk. */
-const warning = ref<BackupWarning | null>(null)
 const route = useRoute()
 
 async function load() {
   try {
-    warning.value = (await api<BackupView>('/api/backups')).warning
+    backupWarnings.value = (await api<BackupView>('/api/backups')).warnings
   } catch {
     // The page itself reports connection problems.
   }
@@ -21,9 +21,9 @@ watch(() => route.path, load)
 </script>
 
 <template>
-  <v-alert v-if="warning" type="warning" class="mb-4">
-    {{ warningText(warning) }}
-    <router-link v-if="route.name !== 'settings'" to="/settings" class="ml-1 banner-link">
+  <v-alert v-if="backupWarnings.length" type="warning" class="mb-4">
+    <div v-for="w in backupWarnings" :key="`${w.destination}-${w.kind}`">{{ warningText(w) }}</div>
+    <router-link v-if="route.name !== 'settings'" to="/settings" class="banner-link">
       Check backups
     </router-link>
   </v-alert>

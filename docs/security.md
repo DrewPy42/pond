@@ -61,7 +61,9 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - A backup holds all data and the master key, protected only by its passphrase (age, scrypt). It is only as strong as that passphrase.
 - Settings, making a backup and every restore step need an admin and the password re-check. A download is single-use and tied to the session that made it. On a new install, restore needs the console setup code and closes once any account exists.
 - Uploaded backups are untrusted: a strict archive reader, a staging folder, and checksum, integrity, key and version checks all pass before anything is replaced.
-- Backups are written only to the folder mounted for them. No path is ever typed in the app.
+- On this computer, backups are written only to the folder mounted for them. No local path is ever typed in the app.
+- **Online storage (rclone):** a pasted setup is untrusted. Only listed services, settings and value shapes are accepted, because others can run programs, read server files or send sign-in tokens elsewhere, and Pond writes its own config from them. rclone runs without a shell, with a bare environment and only `copyto`, `lsjson` and `deletefile`. The setup is encrypted at rest and never returned, logged or audited; rclone's error text is never logged or shown. The program is pinned by checksum in the image and must be kept up to date.
+- Whoever can sign in to the storage account can read or delete the files there. Reading their contents also needs the backup passphrase.
 - Safety copies are unencrypted but never leave the data folder, beside the live database and key.
 - The passphrase is never returned, logged or audited. Details: `backup-design.md`.
 

@@ -71,6 +71,10 @@ Good examples to copy: `packages/shared/src/money.test.ts` and `apps/server/src/
 
 `@pond/sdk/testing` gives pad authors `createTestPad`: the pad runs against an in-memory table store and a fake `core`, with the JSON boundary guard on. `tableStoreContract` is the shared suite that the in-memory and SQLite pad stores both pass, so the fake can't drift. The host has an adversarial fixture pad (`apps/server/src/testing/fixturePad.ts`) used to prove isolation: Space scoping, enablement gates, permission checks and failure auto-disable. A second pad (`testing/filesPad.ts`) covers uploads, downloads and the password re-check. The real disk file store and the in-memory fake pass the same contract (`files/store.contract.test.ts`).
 
+## Tests that need a real rclone
+
+`backup/remote/realRclone.test.ts` runs when `POND_RCLONE_PATH` points to rclone (the Docker image sets it) and is skipped otherwise. It uses only local folders. Run it whenever the rclone version changes. No test signs in to a cloud service.
+
 ## Migration tests
 
 Migrations are forward-only and must run on a database restored from an older backup. The harness in `apps/server/src/db/`:

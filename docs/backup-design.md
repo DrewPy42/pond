@@ -1,6 +1,6 @@
 # Backups and restore (M8): design
 
-**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end). M8b's detailed design was approved 2026-11-25 and is not built.** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
+**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end). M8b is built too (see "As built (M8b)").** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
 
 A backup holds **everything**: all financial data, the files, and the master key that unlocks the encrypted fields. Restore **replaces** everything. Both need your explicit review.
 
@@ -230,4 +230,20 @@ rclone's sign-in needs a web browser, so it is done on your own computer: instal
 ### Tests
 
 Hostile pastes (each dangerous setting, a second remote, tricks with line breaks, encrypted configs), the exact arguments and environment of every run (with a fake runner), token write-back after success and failure, retention, per-destination warnings and the pause after restore. With a real rclone, tests use rclone's local-folder type, which only the test code can create. **No test signs in to a real cloud service,** so each service you use needs one real check by you.
+
+## As built (M8b)
+
+The settings table was checked against rclone 1.76.0's own list of options: every accepted setting exists, so the list is unchanged. Where the build adds to the design:
+
+- **Values are checked, not only names.** Testing showed rclone replaces `%(name)s` in a value with another setting and strips backticks, so both are refused. Anything that becomes part of a server address (region, tenant, provider) is limited to safe characters.
+- **Sign-in settings are required** (a token, or keys, plus the drive for OneDrive), so rclone never looks for another way to sign in.
+- **A bare S3 host name is accepted** and written out as `https://…`, which is how rclone reads it. `http://` is refused.
+- **The image also installs the system certificate list** (`ca-certificates`). rclone needs it for `https`, and the slim base image lacks it.
+- **With both destinations on,** the remote is sent the file just written to the folder. If the folder fails, a separate backup is made for the remote.
+- **A folder that doesn't exist yet passes the check,** because the first upload creates it. So a mistyped bucket name may only show at the first upload.
+- **A newly pasted setup that fails its check isn't saved,** so a working one is never replaced by a broken one. If rclone renewed the token during that check, make a new setup.
+- **An upload may take up to six hours.** Stopping Pond abandons it. While it runs, no other backup or restore can start.
+- **Tests with a real rclone** run when `POND_RCLONE_PATH` is set (it is in the Docker image) and are skipped otherwise, including in CI.
+- **Checked once by hand, not in the test suite:** the app and rclone against rclone's own S3 server over `https`, in a container with no network: refused sign-in, uploads, keeping two copies, and a stored file that decrypts.
+- **Not checked:** any real cloud service, a Raspberry Pi, or the amd64 image.
 

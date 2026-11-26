@@ -4,7 +4,7 @@ import { latestSchemaVersion, openDb, runMigrations, type DbHandle } from '../db
 import type { BackupDb } from '../backup/types.js'
 
 /** Settings whose value is encrypted with the master key. */
-const ENCRYPTED_SETTINGS = ['backup.passphrase']
+const ENCRYPTED_SETTINGS = ['backup.passphrase', 'backup.remote']
 
 const quote = (identifier: string): string => `"${identifier.replace(/"/g, '""')}"`
 
