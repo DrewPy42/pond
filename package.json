@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@12.21.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @pond/server --filter @pond/web dev",

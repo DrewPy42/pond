@@ -8,7 +8,7 @@ Status: M0 (scaffold) in progress. See `docs/` for the spec and `docs/scope-v1.m
 
 ## Develop
 
-Requires Node 22+ and pnpm.
+Requires Node 26+ and pnpm.
 
 ```bash
 pnpm install

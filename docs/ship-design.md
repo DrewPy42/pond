@@ -27,7 +27,7 @@ Checked in the code and repository on 2026-11-26:
 |---|---|---|
 | 1 | Split the milestone? | **Yes. M9a:** installable on a Pi, built there from source. **M9b:** published releases |
 | 2 | How does the server run in the image? | **With `tsx`, as in development,** moved to a runtime dependency. No new package |
-| 3 | Node version | **Node 24 everywhere,** changed first and on its own |
+| 3 | Node version | **Node 26 everywhere,** changed first and on its own. (First approved as Node 24; changed 2026-11-26, see below) |
 | 4 | Which user runs Pond? | **A normal user (ID 1000), not root** |
 | 5 | HTTPS | **Caddy with its own certificate authority.** You trust its certificate once on each device |
 | 6 | Where are images published? | **GitHub's registry, public. You choose the owner name before the first release** |
@@ -37,6 +37,18 @@ Checked in the code and repository on 2026-11-26:
 | 10 | Audit log screen | **Build a simple read-only one** |
 | 11 | Playwright browser tests | **Leave out of v1.** Test the shipped image instead |
 | 12 | Licence files | **Add the AGPL-3.0 text, and ship third-party notices in the image** |
+
+## Node version (changed 2026-11-26)
+
+The design first recommended Node 24 without saying that Node 26 had already become long-term support. [Node's published schedule](https://github.com/nodejs/Release/blob/main/schedule.json), read 2026-11-26:
+
+| Version | Long-term support from | Maintenance from | Ends |
+|---|---|---|---|
+| 22 | 2024-10-29 | 2025-10-21 | 2027-04-30 |
+| 24 | 2025-10-28 | 2026-10-20 | 2028-04-30 |
+| 26 | 2026-10-28 | 2027-10-20 | 2029-04-30 |
+
+**Node 26 was chosen:** it is supported a year longer, and the development Mac already ran it. It was tried on Linux arm64 before any file changed: both native add-ons (better-sqlite3 and argon2) load, the checks pass and the app starts. amd64 and a real Pi are still untested.
 
 ## M9a: installable
 
@@ -212,7 +224,7 @@ Most households have neither a domain nor Tailscale, so the default stays. Tails
 
 Looked up 2026-11-26.
 
-- [Node.js release schedule announcement](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule). The Node 22 end date comes from search summaries that agree; confirm it against Node's published schedule before changing versions.
+- [Node.js release schedule announcement](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule). Dates since confirmed against Node's published schedule (see "Node version").
 - [GitHub: arm64 runners for public repositories](https://github.blog/changelog/2025-08-07-arm64-hosted-runners-for-public-repositories-are-now-generally-available/)
 - [Caddy: running Caddy and trusting its local certificate](https://caddyserver.com/docs/running)
 - Latest releases on 2026-11-26: Caddy 2.11.9, cosign 3.1.6. Exact versions are chosen when each is added.
