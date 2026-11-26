@@ -1,6 +1,6 @@
 # Ship (M9): design
 
-**Status: approved 2026-11-26. Not built.** The amendment at the end adds ports and a no-runner rule (agreed), and proposes HTTPS and certificate changes (not yet approved). Where it differs from the text above it, it wins once approved.
+**Status: approved 2026-11-26. Not built.** The amendment at the end (ports, no runner, HTTPS, certificates and the development setup) is approved too. Where it differs from the text above it, the amendment wins.
 
 The goal: someone with a Raspberry Pi can install Pond by following one page, use it over `https` at home, and update it with one command without losing data.
 
@@ -146,12 +146,12 @@ The test Pi already runs another app in Docker.
 
 | # | Question | Decision | Status |
 |---|---|---|---|
-| 13 | Ports | **Caddy's ports are settings in `.env`,** 443 and 80 by default. Pond brings its own Caddy and doesn't touch other apps | Agreed |
-| 14 | GitHub runner on the Pi | **None. A Pi installs and updates Pond as a user would** | Agreed |
-| 15 | Plain HTTP | **Pond never serves a page or data over plain HTTP** from the Pi to your devices | Proposed |
-| 16 | The browser's HTTPS-only rule (HSTS) | **Off unless you turn it on** in `.env`; never covering subdomains | Proposed |
-| 17 | Certificates | **Caddy's own authority by default.** A trusted certificate through your own domain or Tailscale comes later | Proposed |
-| 18 | Development setup | **Reachable only from the computer running it** | Proposed |
+| 13 | Ports | **Caddy's ports are settings in `.env`,** 443 and 80 by default. Pond brings its own Caddy and doesn't touch other apps | Approved |
+| 14 | GitHub runner on the Pi | **None. A Pi installs and updates Pond as a user would** | Approved |
+| 15 | Plain HTTP | **Pond never serves a page or data over plain HTTP** from the Pi to your devices | Approved |
+| 16 | The browser's HTTPS-only rule (HSTS) | **Off unless you turn it on** in `.env`; never covering subdomains | Approved |
+| 17 | Certificates | **Caddy's own authority by default.** A trusted certificate through your own domain or Tailscale comes later | Approved |
+| 18 | Development setup | **Reachable only from the computer running it** | Approved |
 
 ### The test Pi
 
@@ -206,7 +206,7 @@ Most households have neither a domain nor Tailscale, so the default stays. Tails
 
 ### Development setup (18)
 
-`docker-compose.dev.yml` publishes ports 3210 and 5173 to the whole network, **over plain HTTP, with insecure cookies.** Anyone on the home network can reach the development copy and could read what is sent to it. It would publish them to `127.0.0.1` only. To test from a phone, use the production setup.
+`docker-compose.dev.yml` publishes ports 3210 and 5173 to the whole network, **over plain HTTP, with insecure cookies.** Anyone on the home network can reach the development copy and could read what is sent to it. **It will publish them to `127.0.0.1` only** (in M9a). To test from a phone, use the production setup.
 
 ## Sources
 
