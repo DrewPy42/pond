@@ -3,8 +3,19 @@ import { generateSecret, generateURI, verifySync } from 'otplib'
 
 export const newTotpSecret = (): string => generateSecret()
 
-export const totpUri = (secret: string, username: string): string =>
-  generateURI({ issuer: 'Pond', label: username, secret })
+/** A name or IPv4 address. Anything else (an IPv6 address has colons) is left out. */
+const PLAIN_ADDRESS = /^[a-z0-9.-]{1,100}$/
+
+/**
+ * What the authenticator app is told. The entry names the address Pond was reached by, so that
+ * entries from two installs don't look alike. `address` comes from the request, so only a
+ * plain one is used.
+ */
+export function totpUri(secret: string, username: string, address = ''): string {
+  const at = address.toLowerCase()
+  const issuer = PLAIN_ADDRESS.test(at) ? `Pond (${at})` : 'Pond'
+  return generateURI({ issuer, label: username, secret })
+}
 
 /** Accepts the previous/next 30-second step to tolerate clock drift. */
 export function verifyTotp(secret: string, token: string): boolean {
