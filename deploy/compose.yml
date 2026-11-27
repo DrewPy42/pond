@@ -1,0 +1,76 @@
+# Pond for a home server such as a Raspberry Pi: Pond, with Caddy in front for HTTPS.
+# Copy .env.example to .env, fill it in, then from this folder:
+#
+#   docker compose up -d --build
+#
+# Home network only: never forward these ports from your router (docs/security.md).
+
+# Its own name, so it can't share containers or data with the development setup.
+name: pond-home
+
+x-logging: &logging # Kept small, so logs can't fill the drive.
+  driver: json-file
+  options: { max-size: 10m, max-file: '3' }
+
+services:
+  pond:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: pond:local
+    # Restore relies on this: Pond stops itself, and Docker starts it again.
+    restart: unless-stopped
+    environment:
+      POND_TIMEZONE: ${POND_TIMEZONE:?Set POND_TIMEZONE in .env, for example America/Chicago}
+      TZ: ${POND_TIMEZONE:-}
+      POND_BACKUP_DIR: /backups
+      POND_HSTS: ${POND_HSTS:-false}
+    # No ports: only Caddy can be reached from the network.
+    volumes:
+      - pond-data:/data
+      - type: bind
+        source: ${POND_BACKUP_FOLDER:?Set POND_BACKUP_FOLDER in .env to an existing folder for backups}
+        target: /backups
+        bind:
+          # A mistyped folder stops here, instead of being created where Pond can't write.
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+
+  caddy:
+    # Fixed to one exact multi-architecture image. To update, change the version and take its
+    # digest from `docker buildx imagetools inspect caddy:<version>`.
+    image: caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
+    restart: unless-stopped
+    depends_on: [pond]
+    environment:
+      POND_ADDRESS: ${POND_ADDRESS:-pond.local}
+      POND_HTTPS_PORT: ${POND_HTTPS_PORT:-443}
+      # compose.http-redirect.yml turns this on.
+      POND_HTTP_REDIRECT: 'false'
+    command: [sh, /etc/caddy/start.sh]
+    ports:
+      - '${POND_HTTPS_PORT:-443}:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-start.sh:/etc/caddy/start.sh:ro
+      # Holds Pond's certificate authority. Losing it means trusting a new certificate on
+      # every device.
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+
+volumes:
+  pond-data:
+  caddy-data:
+  caddy-config:

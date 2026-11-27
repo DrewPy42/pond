@@ -25,7 +25,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
 - **Rate limiting:** per IP and per username, with exponential backoff, and audit entries on lockout.
-- **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi. The command is built into the production image; the production compose file isn't built yet (M9a). With the development setup, run `pnpm --filter @pond/server pond admin reset-password <user>`. It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
+- **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi. With the production setup, run it from the `deploy` folder. With the development setup, run `pnpm --filter @pond/server pond admin reset-password <user>`. It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
 
 ## Sessions
 
@@ -69,7 +69,10 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 
 ## Transport
 
-- Caddy terminates TLS. In v1 it uses Caddy's internal certificate authority for a hostname like `pond.local`. The setup docs explain how to trust the root certificate on household devices. Plain HTTP redirects to HTTPS.
+- Caddy terminates TLS. In v1 it uses Caddy's internal certificate authority for a hostname like `pond.local`, or an IP address. The setup docs will explain how to trust the root certificate on household devices.
+- No page or data is served over plain HTTP from the Pi to other devices: plain HTTP is only redirected, both on the HTTPS port and, when HTTPS is on 443, on port 80 (which can be turned off). Between Caddy and Pond it is plain HTTP on Docker's private network. In production, cookies are always `Secure`.
+- HSTS is **off unless turned on** (`POND_HSTS`) and never covers subdomains, because it applies to every port on a host name.
+- Caddy replaces any `X-Forwarded-For` a client sends, so sign-in limits and the audit log use the connecting address.
 - No CORS. The web app and API share one origin.
 
 ## Application hardening

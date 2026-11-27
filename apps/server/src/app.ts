@@ -21,7 +21,15 @@ export function createApp(ctx: AppContext): Express {
   app.disable('x-powered-by')
   // Caddy (a separate container on a private network) terminates TLS in front of us.
   app.set('trust proxy', 'uniquelocal')
-  app.use(helmet())
+  // HSTS covers every port on a host name, so it could break another app on the same machine.
+  // Off unless turned on, and never covering subdomains (docs/ship-design.md, decision 16).
+  app.use(
+    helmet({
+      strictTransportSecurity: ctx.hsts
+        ? { maxAge: 365 * 24 * 60 * 60, includeSubDomains: false }
+        : false,
+    }),
+  )
   // CSV uploads are sent as JSON text and can be several MB; everything else stays small.
   app.use('/api/spaces/:spaceId/imports', express.json({ limit: '7mb' }))
   app.use(express.json({ limit: '1mb' }))

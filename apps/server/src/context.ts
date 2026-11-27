@@ -20,6 +20,8 @@ export interface AppContext {
   /** `Secure` flag on cookies. True in production; off for plain-HTTP local development. */
   cookieSecure: boolean
   now: () => Date
+  /** Send the browser's HTTPS-only rule (HSTS). Off unless the household turns it on. */
+  hsts?: boolean
   /** Announces core changes to LilyPads, after they are committed. */
   events: EventBus
   /** Loads and runs LilyPads (docs/lilypad-host-design.md). */

@@ -1,5 +1,6 @@
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
+import { createApp } from './app'
 import { makeEnv } from './testing/harness'
 
 describe('createApp: GET /api/health and API defaults', () => {
@@ -34,5 +35,19 @@ describe('createApp: GET /api/health and API defaults', () => {
     const res = await request(makeEnv().app).get('/api/accounts')
     expect(res.status).toBe(404)
     expect(res.body).toEqual({ error: 'not_found' })
+  })
+
+  /**
+   * Function: the Strict-Transport-Security header (HSTS)
+   * Inputs:   the app as it comes, and the app with HSTS turned on
+   * Expected: no header by default, because it covers every port on the host name; when on,
+   *           one year and never subdomains
+   */
+  it('sends HSTS only when turned on, and never for subdomains', async () => {
+    const off = await request(makeEnv().app).get('/api/health')
+    expect(off.headers['strict-transport-security']).toBeUndefined()
+    const app = createApp({ ...makeEnv().ctx, spaceRoutes: [], hsts: true })
+    const on = await request(app).get('/api/health')
+    expect(on.headers['strict-transport-security']).toBe('max-age=31536000')
   })
 })
