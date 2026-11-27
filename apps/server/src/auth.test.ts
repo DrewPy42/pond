@@ -133,6 +133,45 @@ describe('GET /api/setup/status and POST /api/setup (first-run admin creation)',
   })
 })
 
+describe('authenticator codes typed with spaces', () => {
+  /**
+   * Inputs:   the right code written as many authenticators show it, "123 456", both when
+   *           turning two-step sign-in on and when signing in
+   * Expected: accepted both times; the space changes nothing
+   */
+  it('accepts a code with a space in it', async () => {
+    const env = makeEnv()
+    const c = new Client(env.app)
+    await c.post('/api/setup', { username: 'admin', displayName: 'A', password: PASSWORD })
+    const { secret } = (await c.post('/api/auth/totp/enroll')).body
+    const spaced = () => ` ${totpNow(secret).slice(0, 3)} ${totpNow(secret).slice(3)} `
+    expect((await c.post('/api/auth/totp/confirm', { code: spaced() })).status).toBe(200)
+    const again = await new Client(env.app).post('/api/auth/login', {
+      username: 'admin',
+      password: PASSWORD,
+      code: spaced(),
+    })
+    expect(again.status).toBe(200)
+  })
+
+  /**
+   * Inputs:   five digits and a space, and a recovery code (letters, digits and a dash)
+   * Expected: the short code is refused; the recovery code still works
+   */
+  it('still refuses a short code and accepts recovery codes', async () => {
+    const env = makeEnv()
+    const admin = await bootstrapAdmin(env)
+    const login = (code: string) =>
+      new Client(env.app).post('/api/auth/login', {
+        username: 'admin',
+        password: PASSWORD,
+        code,
+      })
+    expect((await login('123 45')).status).toBe(401)
+    expect((await login(admin.recoveryCodes![0]!)).status).toBe(200)
+  })
+})
+
 describe('admin TOTP requirement (POST /api/auth/totp/enroll and /confirm)', () => {
   /**
    * Inputs:   a brand-new admin session; enroll, a wrong code "000000", then the right code
