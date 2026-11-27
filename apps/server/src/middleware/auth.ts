@@ -83,6 +83,24 @@ export function requireSpace(repos: Repos, minRole: Role): RequestHandler {
   }
 }
 
+/**
+ * For the only routes that change things without an account: creating the first admin, and
+ * restoring onto a new install (docs/simple-setup-design.md). They close as soon as any account
+ * exists, checked on every request. They also refuse requests a browser marks as coming from
+ * another origin, so no other website or app can use someone's browser to claim Pond. (Browsers
+ * already won't send JSON or raw files across origins, since Pond never allows it.)
+ */
+export const firstRunOnly =
+  (repos: Repos): RequestHandler =>
+  (req, res, next) => {
+    if (repos.users.count() > 0) return sendError(res, 404, 'not_found')
+    // Sent by browsers over HTTPS and to localhost. Other clients don't send it.
+    const site = req.header('sec-fetch-site')
+    if (site !== undefined && site !== 'same-origin' && site !== 'none')
+      return sendError(res, 403, 'cross_origin')
+    next()
+  }
+
 /** For sensitive actions (reveals, backups, security settings): password re-entered < 5 min ago. */
 export const requireRecentReauth =
   (now: () => Date): RequestHandler =>

@@ -91,7 +91,7 @@ Taken automatically **before any core or LilyPad database change** and **before 
 
 Docker's restart policy brings Pond back (M9 sets it; I'll add it to the development setup). If you run Pond another way, the screen tells you to start it again. Nothing is changed until that start, and an invalid backup never gets that far.
 
-**On a new install:** the first-run screen offers "Restore from a backup". It needs the **setup code from the server console**, as creating the first admin does, plus the file and passphrase. It is closed once any account exists. You sign in with the accounts and authenticator from the backup.
+**On a new install:** the first-run screen offers "Restore from a backup". It needs the **setup code from the server console**, as creating the first admin does, plus the file and passphrase. (Changed 2026-11-27: the setup code was removed. See `simple-setup-design.md`.) It is closed once any account exists. You sign in with the accounts and authenticator from the backup.
 
 **Upload limit:** 2 GB by default, adjustable by a server setting.
 
@@ -122,7 +122,7 @@ Splitting this off lets M8a protect your data sooner, and gives the rclone secur
 | Stolen backup file | age encryption with a passphrase that isn't a login password; strength is only as good as the passphrase |
 | Crafted backup used to write files or run code | Strict archive reader, staging folder, checksums, integrity and version checks before anything is replaced |
 | Stolen admin session | Password re-check for backup, download, passphrase, destination and restore; no typed paths; rclone allow-list |
-| Restore abused on a new install | Setup code from the server console; closed once any account exists |
+| Restore abused on a new install | Closed once any account exists; cross-origin requests refused; lower memory limit and a wait after failed checks (the setup code was removed 2026-11-27, see `simple-setup-design.md`) |
 | Secrets in logs | Passphrase, rclone settings and key never logged or audited |
 
 **Not protected:** someone who has the Pi itself has the live data and the key (unchanged from today). An optional startup passphrase for the master key was once described in `security.md`; it has never been built. **Decided 2026-11-25: it moves to "Later"** (`future.md`).

@@ -9,7 +9,6 @@ import { RestoreService } from './backup/restore.js'
 import { createSafetyCopies } from './backup/safety.js'
 import { BackupService } from './backup/service.js'
 import { LoginLimiter } from './auth/ratelimit.js'
-import { SetupCode } from './auth/setupCode.js'
 import { loadConfig } from './config.js'
 import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
 import { newId } from './db/ids.js'
@@ -50,14 +49,8 @@ const safety = createSafetyCopies({ db: backupDb, paths, now, gate: files })
 let starting = true
 let startCopyTaken = booted.safetyCopyTaken
 seedMissingCategories({ repos, newId, now: () => new Date() }) // Spaces from before categories existed
-const setupCode = new SetupCode(repos.users.count() === 0)
-if (setupCode.active) {
-  // Printed to the console on purpose: physical access to the server is the trust anchor.
-  const code = setupCode.reveal()
-  console.log(
-    `\n  Pond first-run setup code: ${code}\n  Enter it in the browser to create the admin account.\n`,
-  )
-}
+if (repos.users.count() === 0)
+  log.info('Pond has no account yet. Open it in a browser to set it up.')
 
 const simplefin = createHttpSimpleFinClient()
 const events = createEventBus((e, ev) =>
@@ -126,7 +119,6 @@ const app = createApp({
   repos,
   crypto,
   log,
-  setupCode,
   limiter: new LoginLimiter(),
   cookieSecure: config.cookieSecure,
   now: () => new Date(),

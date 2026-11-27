@@ -90,7 +90,11 @@ export class RestoreService {
   }
 
   /** Unpacks into staging and checks everything. A wrong passphrase keeps the upload. */
-  async check(uploadId: string, passphrase: string): Promise<RestoreSummary> {
+  async check(
+    uploadId: string,
+    passphrase: string,
+    limits: { maxWorkFactor?: number } = {},
+  ): Promise<RestoreSummary> {
     const release = this.d.lock.acquire()
     try {
       const upload = this.upload
@@ -101,7 +105,7 @@ export class RestoreService {
       await fsp.rm(dir, { recursive: true, force: true })
       await this.requireRoom(upload.size * 2)
       try {
-        const summary = await this.stage(upload, dir, passphrase)
+        const summary = await this.stage(upload, dir, passphrase, limits.maxWorkFactor)
         this.staged = { id: upload.id, summary }
         return summary
       } catch (e) {
@@ -118,12 +122,14 @@ export class RestoreService {
     upload: { id: string; path: string },
     dir: string,
     passphrase: string,
+    maxWorkFactor: number | undefined,
   ): Promise<RestoreSummary> {
     await fsp.mkdir(path.join(dir, 'keys'), { recursive: true, mode: 0o700 })
     await fsp.mkdir(path.join(dir, 'files'), { mode: 0o700 })
     const manifest = await readArchive({
       source: upload.path,
       passphrase,
+      maxWorkFactor,
       onManifest: (m) => this.checkVersions(m.schemaVersion, m.lilypads),
       sink: async (entry) => {
         // The path is one of the few shapes manifest.ts allows, so it stays inside `dir`.

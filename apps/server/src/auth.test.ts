@@ -1,3 +1,4 @@
+import request from 'supertest'
 import { describe, expect, it } from 'vitest'
 import { IDLE_TIMEOUT_MS, REAUTH_WINDOW_MS, hasRecentReauth, sha256 } from './auth/sessions'
 import { Client, PASSWORD, bootstrapAdmin, createUser, makeEnv, totpNow } from './testing/harness'
@@ -9,83 +10,126 @@ import { Client, PASSWORD, bootstrapAdmin, createUser, makeEnv, totpNow } from '
  */
 
 describe('GET /api/setup/status and POST /api/setup (first-run admin creation)', () => {
+  const body = { username: 'admin', displayName: 'A', password: PASSWORD }
+
   /**
-   * Inputs:   a fresh install (setup code active, no users); setup request with code "WRONG"
-   * Expected: status endpoint says setupRequired=true; the request gets 403 and no user is created
+   * Inputs:   a new install (no users), and a setup request with no code of any kind
+   * Expected: setup is offered, the admin is created, and then setup is no longer offered
    */
-  it('refuses setup without the correct one-time code', async () => {
+  it('lets whoever opens a new Pond first create the admin', async () => {
     const env = makeEnv()
     const c = new Client(env.app)
     expect((await c.get('/api/setup/status')).body).toEqual({ setupRequired: true })
-    const bad = await c.post('/api/setup', {
-      setupCode: 'WRONG',
-      username: 'admin',
-      displayName: 'A',
-      password: PASSWORD,
-    })
-    expect(bad.status).toBe(403)
-    expect(env.ctx.repos.users.count()).toBe(0)
+    const res = await c.post('/api/setup', body)
+    expect(res.status).toBe(201)
+    expect(res.body.user).toMatchObject({ username: 'admin', isAdmin: true })
+    expect((await c.get('/api/setup/status')).body).toEqual({ setupRequired: false })
   })
 
   /**
-   * Inputs:   the correct code with a valid username/password, then a second setup attempt
-   * Expected: first succeeds (admin exists); second gets 404 and status reports setupRequired=false
+   * Inputs:   a second setup request after the admin exists; also an install whose only account
+   *           is an ordinary user
+   * Expected: 404 both times and no new account: setup closes once any account exists
    */
-  it('creates the first admin once and then consumes the code', async () => {
+  it('is closed once any account exists', async () => {
     const env = makeEnv()
-    const admin = await bootstrapAdmin(env)
-    expect(env.ctx.repos.users.findById(admin.id)).toMatchObject({
-      username: 'admin',
-      isAdmin: true,
-    })
-    const again = await new Client(env.app).post('/api/setup', {
-      setupCode: 'ANYTHING',
-      username: 'second',
-      displayName: 'Second',
-      password: PASSWORD,
-    })
+    await bootstrapAdmin(env)
+    const again = await new Client(env.app).post('/api/setup', { ...body, username: 'second' })
     expect(again.status).toBe(404)
-    expect((await new Client(env.app).get('/api/setup/status')).body).toEqual({
+    expect(env.ctx.repos.users.count()).toBe(1)
+
+    const other = makeEnv()
+    other.ctx.repos.users.create({
+      id: 'u',
+      username: 'ann',
+      displayName: 'Ann',
+      passwordHash: 'h',
+      isAdmin: false,
+    })
+    expect((await new Client(other.app).get('/api/setup/status')).body).toEqual({
       setupRequired: false,
     })
+    expect((await new Client(other.app).post('/api/setup', body)).status).toBe(404)
   })
 
   /**
-   * Inputs:   an install that already has users (makeEnv without a setup code)
-   * Expected: setupCode.active is false, so setup can never be used again
+   * Inputs:   two setup requests for different names, sent at the same moment
+   * Expected: exactly one succeeds, and there is one account
    */
-  it('has no setup code when users already exist', () => {
-    expect(makeEnv({ withSetupCode: false }).ctx.setupCode.active).toBe(false)
-  })
-
-  /**
-   * Inputs:   correct code, password "short"
-   * Expected: 400 weak_password, and the code is NOT burned (setupCode still active)
-   */
-  it('rejects a weak password without using up the setup code', async () => {
+  it('creates only one admin when two people set up at once', async () => {
     const env = makeEnv()
-    const r = await new Client(env.app).post('/api/setup', {
-      setupCode: env.ctx.setupCode.reveal(),
-      username: 'admin',
-      displayName: 'A',
-      password: 'short',
-    })
-    expect(r.status).toBe(400)
-    expect(r.body.error).toBe('weak_password')
-    expect(env.ctx.setupCode.active).toBe(true)
+    const results = await Promise.all(
+      ['first', 'second'].map((username) =>
+        new Client(env.app).post('/api/setup', { ...body, username }),
+      ),
+    )
+    expect(results.map((r) => r.status).sort()).toEqual([201, 404])
+    expect(env.ctx.repos.users.count()).toBe(1)
   })
 
   /**
-   * Inputs:   five wrong codes in a row from one IP, then the correct code
-   * Expected: the sixth request is throttled with 429 even though its code is right
+   * Inputs:   password "short", then a good one
+   * Expected: 400 weak_password with nothing created, then success
    */
-  it('throttles guessing of the setup code', async () => {
+  it('refuses a weak password and stays open', async () => {
     const env = makeEnv()
     const c = new Client(env.app)
-    const body = { setupCode: 'NOPE', username: 'admin', displayName: 'A', password: PASSWORD }
-    for (let i = 0; i < 5; i++) await c.post('/api/setup', body)
-    const r = await c.post('/api/setup', { ...body, setupCode: env.ctx.setupCode.reveal() })
-    expect(r.status).toBe(429)
+    const weak = await c.post('/api/setup', { ...body, password: 'short' })
+    expect(weak.status).toBe(400)
+    expect(weak.body.error).toBe('weak_password')
+    expect(env.ctx.repos.users.count()).toBe(0)
+    expect((await c.post('/api/setup', body)).status).toBe(201)
+  })
+
+  /**
+   * Inputs:   setup requests the browser marks "cross-site" (another website) or "same-site"
+   *           (another app on the same machine, on another port)
+   * Expected: 403 cross_origin and no account
+   */
+  it.each(['cross-site', 'same-site', 'anything-else'])(
+    'refuses a request the browser marks %s',
+    async (site) => {
+      const env = makeEnv()
+      const res = await request(env.app).post('/api/setup').set('Sec-Fetch-Site', site).send(body)
+      expect(res.status).toBe(403)
+      expect(res.body.error).toBe('cross_origin')
+      expect(env.ctx.repos.users.count()).toBe(0)
+    },
+  )
+
+  /**
+   * Inputs:   setup marked "same-origin" (Pond's own page), "none" (the person's own action),
+   *           and with no header (not a browser, or plain HTTP)
+   * Expected: each one is accepted
+   */
+  it.each(['same-origin', 'none', undefined])('accepts Sec-Fetch-Site %s', async (site) => {
+    const env = makeEnv()
+    const send = request(env.app).post('/api/setup')
+    const res = await (site ? send.set('Sec-Fetch-Site', site) : send).send(body)
+    expect(res.status).toBe(201)
+  })
+
+  /**
+   * Inputs:   what another website can send without asking first (a form-style or plain-text
+   *           body), and the browser's "may I send JSON?" question from another site
+   * Expected: nothing is created, and Pond never says another origin is allowed
+   */
+  it('gives another website no way to send setup', async () => {
+    const env = makeEnv()
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded']) {
+      const res = await request(env.app)
+        .post('/api/setup')
+        .set('Content-Type', type)
+        .send(type === 'text/plain' ? JSON.stringify(body) : new URLSearchParams(body).toString())
+      expect(res.status, type).toBe(400)
+    }
+    const asked = await request(env.app)
+      .options('/api/setup')
+      .set('Origin', 'https://elsewhere.example')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type')
+    expect(asked.headers['access-control-allow-origin']).toBeUndefined()
+    expect(env.ctx.repos.users.count()).toBe(0)
   })
 })
 
@@ -99,7 +143,6 @@ describe('admin TOTP requirement (POST /api/auth/totp/enroll and /confirm)', () 
     const env = makeEnv()
     const c = new Client(env.app)
     await c.post('/api/setup', {
-      setupCode: env.ctx.setupCode.reveal(),
       username: 'admin',
       displayName: 'A',
       password: PASSWORD,

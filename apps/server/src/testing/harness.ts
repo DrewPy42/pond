@@ -12,7 +12,6 @@ import { RestoreService } from '../backup/restore.js'
 import { createSafetyCopies } from '../backup/safety.js'
 import { BackupService } from '../backup/service.js'
 import { LoginLimiter } from '../auth/ratelimit.js'
-import { SetupCode } from '../auth/setupCode.js'
 import type { AppContext } from '../context.js'
 import { createCrypto } from '../crypto/index.js'
 import { createEventBus, type EventBus } from '../events.js'
@@ -53,7 +52,6 @@ export interface TestEnv {
  */
 export function makeEnv(
   opts: {
-    withSetupCode?: boolean
     pads?: PadModule[]
     padFailureLimit?: number
     /** A temporary folder, for tests that make or restore backups. */
@@ -121,7 +119,6 @@ export function makeEnv(
     repos,
     crypto,
     log,
-    setupCode: new SetupCode(opts.withSetupCode ?? true),
     limiter: new LoginLimiter({ clock }),
     cookieSecure: false,
     now: () => new Date(t),
@@ -206,7 +203,6 @@ export interface Account {
 export async function bootstrapAdmin(env: TestEnv, username = 'admin'): Promise<Account> {
   const client = new Client(env.app, '10.0.0.1')
   const setup = await client.post('/api/setup', {
-    setupCode: env.ctx.setupCode.reveal(),
     username,
     displayName: 'Admin',
     password: PASSWORD,

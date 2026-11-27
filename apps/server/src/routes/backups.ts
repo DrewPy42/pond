@@ -3,11 +3,13 @@ import fsp from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import { Router, type Request, type RequestHandler, type Response } from 'express'
 import { z } from 'zod'
+import { DEFAULT_WORK_FACTOR } from '../backup/archive.js'
 import { BackupError, type BackupErrorCode } from '../backup/errors.js'
 import { MAX_SETUP_LENGTH } from '../backup/remote/setup.js'
+import { recordAudit } from '../audit.js'
 import type { AppContext } from '../context.js'
 import { sendError, validateBody } from '../http.js'
-import { requireAdmin, requireAuth, requireRecentReauth } from '../middleware/auth.js'
+import { firstRunOnly, requireAdmin, requireAuth, requireRecentReauth } from '../middleware/auth.js'
 
 const STATUS: Record<BackupErrorCode, number> = {
   passphrase_not_set: 409,
@@ -58,6 +60,12 @@ const checkBody = z.object({ uploadId: uploadRef, passphrase })
 /** `replaceEverything` makes the destructive step impossible to send by accident. */
 const confirmBody = z.object({ uploadId: uploadRef, replaceEverything: z.literal(true) })
 
+interface CheckOptions {
+  maxWorkFactor?: number
+  failed?: (req: Request) => void
+  passed?: (req: Request) => void
+}
+
 /** The upload and check steps, shared by Settings and the first-run screen. */
 function restoreSteps(ctx: AppContext) {
   return {
@@ -66,11 +74,23 @@ function restoreSteps(ctx: AppContext) {
         return sendError(res, 415, 'unsupported_content_type')
       res.status(201).json(await ctx.restores.receive(req, Number(req.headers['content-length'])))
     }),
-    check: [
+    check: (o: CheckOptions = {}) => [
       validateBody(checkBody),
       handle(async (req, res) => {
         const b = req.body as z.infer<typeof checkBody>
-        res.json({ summary: await ctx.restores.check(b.uploadId, b.passphrase) })
+        let summary
+        try {
+          summary = await ctx.restores.check(b.uploadId, b.passphrase, {
+            maxWorkFactor: o.maxWorkFactor,
+          })
+        } catch (e) {
+          // Noted here, as the check fails, so hanging up early doesn't avoid being counted.
+          // "Busy" means nothing was looked at.
+          if (!(e instanceof BackupError && e.code === 'busy')) o.failed?.(req)
+          throw e
+        }
+        o.passed?.(req)
+        res.json({ summary })
       }),
     ],
     confirm: (requestedBy: (req: Request) => string | null) => [
@@ -189,37 +209,45 @@ export function backupsRouter(ctx: AppContext): Router {
   )
 
   r.post('/restore/upload', reauth, steps.upload)
-  r.post('/restore/check', reauth, ...steps.check)
+  r.post('/restore/check', reauth, ...steps.check())
   r.post('/restore/confirm', reauth, ...steps.confirm((req) => req.auth!.user.username))
   return r
 }
 
 /**
- * Restore on a brand-new install, from the first-run screen: the main disaster case. It needs the
- * setup code from the server console, like creating the first admin, and closes as soon as any
- * account exists.
+ * Restore on a brand-new install, from the first-run screen: the main disaster case. Like
+ * creating the first admin it needs no account, and closes as soon as any account exists. Anyone
+ * who can reach a new Pond can use it, so it is limited: a backup may ask for no more memory
+ * than the ones Pond writes, and failed checks make an address wait.
  */
 export function setupRestoreRouter(ctx: AppContext): Router {
   const r = Router()
   const steps = restoreSteps(ctx)
-  const gate: RequestHandler = (req, res, next) => {
-    if (!ctx.setupCode.active || ctx.repos.users.count() > 0)
-      return sendError(res, 404, 'not_found')
-    const key = `setup:${req.ip ?? 'unknown'}`
-    const wait = ctx.limiter.retryAfterMs(key)
-    if (wait > 0) {
-      res.setHeader('Retry-After', Math.ceil(wait / 1000))
-      return sendError(res, 429, 'too_many_attempts')
-    }
-    // Checked before any of the body is read.
-    if (!ctx.setupCode.verify(req.header('x-setup-code') ?? '')) {
-      ctx.limiter.fail(key)
-      return sendError(res, 403, 'invalid_setup_code')
-    }
-    next()
+  const gate = firstRunOnly(ctx.repos)
+  const key = (req: Request) => `setup-restore:${req.ip ?? 'unknown'}`
+
+  const waiting: RequestHandler = (req, res, next) => {
+    const wait = ctx.limiter.retryAfterMs(key(req))
+    if (wait <= 0) return next()
+    res.setHeader('Retry-After', Math.ceil(wait / 1000))
+    sendError(res, 429, 'too_many_attempts')
   }
+  const check = steps.check({
+    maxWorkFactor: DEFAULT_WORK_FACTOR,
+    failed: (req) => {
+      if (ctx.limiter.fail(key(req)))
+        recordAudit(
+          ctx.repos.audit,
+          { action: 'auth.lockout', meta: { scope: 'setup_restore', ip: req.ip } },
+          ctx.now(),
+          ctx.newId,
+        )
+    },
+    passed: (req) => ctx.limiter.success(key(req)),
+  })
+
   r.post('/upload', gate, steps.upload)
-  r.post('/check', gate, ...steps.check)
+  r.post('/check', gate, waiting, ...check)
   r.post('/confirm', gate, ...steps.confirm(() => null))
   return r
 }

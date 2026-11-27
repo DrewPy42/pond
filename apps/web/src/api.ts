@@ -28,17 +28,12 @@ async function failure(res: Response): Promise<ApiError> {
 }
 
 /** Sends a file as the raw request body (LilyPad upload routes). */
-export async function apiUpload<T = Record<string, unknown>>(
-  path: string,
-  file: Blob,
-  extraHeaders: Record<string, string> = {},
-): Promise<T> {
+export async function apiUpload<T = Record<string, unknown>>(path: string, file: Blob): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/octet-stream',
       ...csrfHeaders('POST'),
-      ...extraHeaders,
     },
     credentials: 'same-origin',
     body: file,
@@ -63,10 +58,10 @@ export async function apiDownload(path: string): Promise<void> {
 /** Same-origin JSON fetch. Sends the CSRF token on state-changing requests. */
 export async function api<T = Record<string, unknown>>(
   path: string,
-  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+  opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   const method = opts.method ?? 'GET'
-  const headers = { ...csrfHeaders(method), ...opts.headers }
+  const headers = csrfHeaders(method)
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   const res = await fetch(path, {
     method,
@@ -82,7 +77,7 @@ export async function api<T = Record<string, unknown>>(
 const MESSAGES: Record<string, string> = {
   invalid_credentials: 'Wrong username, password or code.',
   too_many_attempts: 'Too many attempts. Wait a bit and try again.',
-  invalid_setup_code: "That setup code isn't right. Check the server console.",
+  cross_origin: 'Pond refused this because it came from somewhere else. Open Pond and try again.',
   weak_password: 'Choose a longer, less common password (at least 12 characters).',
   invalid_code: "That code didn't match. Check your authenticator app and try again.",
   invalid_input: 'Please check the highlighted fields.',

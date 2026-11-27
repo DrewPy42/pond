@@ -49,12 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
     )
   }
 
-  async function setup(body: {
-    setupCode: string
-    username: string
-    displayName: string
-    password: string
-  }) {
+  async function setup(body: { username: string; displayName: string; password: string }) {
     apply(await api<MeResponse>('/api/setup', { method: 'POST', body }))
     setupRequired.value = false
   }

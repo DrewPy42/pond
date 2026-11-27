@@ -42,7 +42,7 @@ Tidying old copies deletes only files with this install's own backup names, and 
 
 ## Restore (v1: full overwrite)
 
-1. An admin uploads a backup (2 GB limit, `POND_RESTORE_MAX_MB`) and enters its passphrase. On a **brand-new install**, the first-run screen offers this with the setup code from the server console; it closes once any account exists.
+1. An admin uploads a backup (2 GB limit, `POND_RESTORE_MAX_MB`) and enters its passphrase. On a **brand-new install**, the first-run screen offers this with no account; it closes once any account exists, accepts only backups with a scrypt work factor of 18 or less (what Pond writes), and makes an address wait after five failed checks.
 2. Pond checks free space, unpacks into a staging folder and checks checksums, database integrity, that the key opens the encrypted values, and that core migrations run on a copy. Nothing live changes.
 3. Version check:
    - **Older schema:** allowed. Migrations run after the restore.

@@ -6,10 +6,7 @@ import { useAction } from '../../composables/useAction'
 import { useReauthRetry } from '../../composables/withReauth'
 import { when } from './backupText'
 
-/**
- * Upload, check, confirm. Used in Settings and on a brand-new install's first screen, where the
- * setup code from the server console stands in for signing in.
- */
+/** Upload, check, confirm. Used in Settings and on a brand-new install's first screen. */
 const props = withDefaults(defineProps<{ firstRun?: boolean; pollMs?: number }>(), {
   firstRun: false,
   pollMs: 2000,
@@ -17,7 +14,6 @@ const props = withDefaults(defineProps<{ firstRun?: boolean; pollMs?: number }>(
 
 const withReauth = useReauthRetry()
 const { busy, error, run } = useAction()
-const setupCode = ref('')
 const file = ref<File | null>(null)
 const passphrase = ref('')
 const uploadId = ref('')
@@ -27,10 +23,8 @@ const restarting = ref(false)
 const slow = ref(false)
 
 const base = () => (props.firstRun ? '/api/setup/restore' : '/api/backups/restore')
-const headers = (): Record<string, string> =>
-  props.firstRun ? { 'x-setup-code': setupCode.value.trim() } : {}
 const post = <T,>(step: string, body: object) =>
-  api<T>(`${base()}/${step}`, { method: 'POST', body, headers: headers() })
+  api<T>(`${base()}/${step}`, { method: 'POST', body })
 
 function chooseAgain() {
   uploadId.value = ''
@@ -45,7 +39,7 @@ async function check() {
     withReauth(async () => {
       // A wrong passphrase doesn't mean uploading the file again.
       uploadId.value ||= (
-        await apiUpload<{ uploadId: string }>(`${base()}/upload`, chosen, headers())
+        await apiUpload<{ uploadId: string }>(`${base()}/upload`, chosen)
       ).uploadId
       return post<{ summary: RestoreSummary }>('check', {
         uploadId: uploadId.value,
@@ -107,15 +101,6 @@ function waitForRestart(tries = 0) {
 
   <v-form v-else-if="!summary" @submit.prevent="check">
     <v-alert v-if="error" type="error" density="compact" class="mb-3">{{ error }}</v-alert>
-    <v-text-field
-      v-if="firstRun"
-      v-model="setupCode"
-      label="Setup code"
-      hint="Printed in the server console when Pond started"
-      persistent-hint
-      autocomplete="off"
-      class="mb-3"
-    />
     <v-file-input
       v-model="file"
       label="Backup file"
@@ -128,11 +113,7 @@ function waitForRestart(tries = 0) {
       type="password"
       autocomplete="off"
     />
-    <v-btn
-      type="submit"
-      color="primary"
-      :loading="busy"
-      :disabled="!file || !passphrase || (firstRun && !setupCode)"
+    <v-btn type="submit" color="primary" :loading="busy" :disabled="!file || !passphrase"
       >Check this backup</v-btn
     >
     <p v-if="busy" class="text-caption mt-2">

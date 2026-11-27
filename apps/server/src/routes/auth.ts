@@ -18,7 +18,7 @@ import {
 } from '../auth/totp.js'
 import type { AppContext } from '../context.js'
 import { h, sendError, validateBody } from '../http.js'
-import { requireAuth } from '../middleware/auth.js'
+import { firstRunOnly, requireAuth } from '../middleware/auth.js'
 
 export const usernameSchema = z
   .string()
@@ -59,31 +59,20 @@ export function authRouter(ctx: AppContext): Router {
   // ----- First run -----
 
   r.get('/setup/status', (_req, res) => {
-    res.json({ setupRequired: ctx.setupCode.active })
+    res.json({ setupRequired: repos.users.count() === 0 })
   })
 
   const setupBody = z.object({
-    setupCode: z.string().min(1).max(64),
     username: usernameSchema,
     displayName: displayNameSchema,
     password: passwordSchema,
   })
   r.post(
     '/setup',
+    firstRunOnly(repos),
     validateBody(setupBody),
     h(async (req, res) => {
       const body = req.body as z.infer<typeof setupBody>
-      const key = `setup:${ip(req)}`
-      const wait = ctx.limiter.retryAfterMs(key)
-      if (wait > 0) {
-        res.setHeader('Retry-After', Math.ceil(wait / 1000))
-        return sendError(res, 429, 'too_many_attempts')
-      }
-      if (!ctx.setupCode.active) return sendError(res, 404, 'not_found')
-      if (!ctx.setupCode.verify(body.setupCode)) {
-        if (ctx.limiter.fail(key)) audit({ action: 'auth.lockout', meta: { scope: 'setup' } })
-        return sendError(res, 403, 'invalid_setup_code')
-      }
       const problem = checkPasswordStrength(body.password, body.username)
       if (problem) return sendError(res, 400, 'weak_password', { reason: problem })
 
@@ -103,7 +92,6 @@ export function authRouter(ctx: AppContext): Router {
         return ok
       })
       if (!created) return sendError(res, 404, 'not_found')
-      ctx.setupCode.consume()
 
       setSessionCookies(
         res,

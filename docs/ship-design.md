@@ -18,7 +18,9 @@ As built:
 - The backup folder is required, and Docker won't create it if it's missing. An unplugged drive is still caught by the marker file. **For the install page:** use a folder that exists even with the drive unplugged (such as the mount point itself); otherwise Pond may not start without the drive.
 - Pond refuses to start with a time zone that doesn't exist.
 
-Still to build in M9a: the audit log screen, licence files, the install page and the stale text.
+- The first-run setup code is removed (`simple-setup-design.md`). **For the install page:** set Pond up as soon as it starts, never forward ports, and say how to erase a Pond someone else set up.
+
+Still to build in M9a: removing rclone (`simple-setup-design.md`), the audit log screen, licence files, the install page and the stale text.
 
 ## Where things stand
 

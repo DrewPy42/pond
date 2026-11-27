@@ -1,6 +1,6 @@
 # Simpler setup: design
 
-**Status: approved 2026-11-27. Not built.**
+**Status: approved 2026-11-27. The setup code is removed (first change). rclone is not yet removed.**
 
 Remove the first-run setup code and online backups through rclone. Both ask more of a home user than they're worth.
 

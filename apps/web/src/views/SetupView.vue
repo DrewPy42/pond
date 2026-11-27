@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
-const form = ref({ setupCode: '', username: '', displayName: '', password: '' })
+const form = ref({ username: '', displayName: '', password: '' })
 const error = ref('')
 const busy = ref(false)
 const restoring = ref(false)
@@ -40,15 +40,14 @@ async function submit() {
   </template>
   <template v-else>
     <h1 class="text-h5 mb-1">Set up Pond</h1>
-    <p class="text-medium-emphasis mb-4">
-      Create the administrator account. The setup code was printed in the server console when Pond
-      started.
-    </p>
+    <p class="text-medium-emphasis mb-4">Create the administrator account.</p>
+    <v-alert type="warning" density="compact" class="mb-4">
+      If you've used this Pond before, stop here. It can't find your data.
+    </v-alert>
     <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4">{{
       error
     }}</v-alert>
     <v-form @submit.prevent="submit">
-      <v-text-field v-model="form.setupCode" label="Setup code" autocomplete="off" required />
       <v-text-field v-model="form.displayName" label="Your name" autocomplete="name" required />
       <v-text-field v-model="form.username" label="Username" autocomplete="username" required />
       <v-text-field
