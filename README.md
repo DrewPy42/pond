@@ -17,7 +17,7 @@ pnpm test
 pnpm lint && pnpm typecheck
 ```
 
-Or with Docker: `docker compose -f docker-compose.dev.yml up`.
+Or with Docker: `docker compose -f docker-compose.dev.yml up`. The Docker development copy uses plain HTTP, so it can be opened only from the computer running it.
 
 ## Backups and recovery
 

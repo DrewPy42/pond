@@ -12,9 +12,11 @@ services:
     # Pond stops itself to apply a restore. With live reload the dev server may stay stopped
     # until you run `docker compose -f docker-compose.dev.yml restart`.
     restart: unless-stopped
+    # This computer only. The development copy is plain HTTP with insecure cookies, so it must
+    # not be reachable from the network. To try Pond from a phone, use the production setup.
     ports:
-      - '3210:3210'
-      - '5173:5173'
+      - '127.0.0.1:3210:3210'
+      - '127.0.0.1:5173:5173'
     volumes:
       - .:/workspace
       - /workspace/node_modules
