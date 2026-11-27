@@ -5,7 +5,6 @@ import { Router, type Request, type RequestHandler, type Response } from 'expres
 import { z } from 'zod'
 import { DEFAULT_WORK_FACTOR } from '../backup/archive.js'
 import { BackupError, type BackupErrorCode } from '../backup/errors.js'
-import { MAX_SETUP_LENGTH } from '../backup/remote/setup.js'
 import { recordAudit } from '../audit.js'
 import type { AppContext } from '../context.js'
 import { sendError, validateBody } from '../http.js'
@@ -19,16 +18,6 @@ const STATUS: Record<BackupErrorCode, number> = {
   folder_not_available: 409,
   folder_marker_missing: 409,
   destination_required: 400,
-  bad_remote_setup: 400,
-  bad_remote_folder: 400,
-  remote_not_available: 409,
-  remote_not_set_up: 409,
-  remote_paused: 409,
-  remote_sign_in_failed: 502,
-  remote_unreachable: 502,
-  remote_full: 507,
-  remote_failed: 502,
-  remote_upload_unconfirmed: 502,
   not_enough_space: 507,
   too_large: 413,
   upload_failed: 400,
@@ -152,36 +141,11 @@ export function backupsRouter(ctx: AppContext): Router {
   r.post(
     '/run',
     reauth,
-    validateBody(z.object({ destination: z.enum(['download', 'folder', 'remote']) })),
+    validateBody(z.object({ destination: z.enum(['download', 'folder']) })),
     handle(async (req, res) => {
-      const { destination } = req.body as { destination: 'download' | 'folder' | 'remote' }
+      const { destination } = req.body as { destination: 'download' | 'folder' }
       if (destination === 'folder') res.json(await ctx.backups.backupToFolder(actor(req)))
-      else if (destination === 'remote') res.json(await ctx.backups.backupToRemote(actor(req)))
       else res.json(await ctx.backups.backupForDownload(actor(req), req.auth!.sessionId))
-    }),
-  )
-
-  // `setup` is the pasted rclone text. It is never returned, logged or audited.
-  const remoteBody = z.object({
-    setup: z.string().min(1).max(MAX_SETUP_LENGTH).optional(),
-    folder: z.string().min(1).max(400),
-    enabled: z.boolean(),
-  })
-  r.put(
-    '/remote',
-    reauth,
-    validateBody(remoteBody),
-    handle(async (req, res) => {
-      await ctx.backups.saveRemote(actor(req), req.body as z.infer<typeof remoteBody>)
-      res.json(await ctx.backups.view())
-    }),
-  )
-  r.delete(
-    '/remote',
-    reauth,
-    handle(async (req, res) => {
-      ctx.backups.removeRemote(actor(req))
-      res.json(await ctx.backups.view())
     }),
   )
 

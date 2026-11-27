@@ -8,27 +8,12 @@ export interface BackupSchedule {
   weekday: number
 }
 
-/** Places backups can be sent on a schedule. */
-export type ScheduledDestination = 'folder' | 'remote'
-
-export type BackupWarning = { destination: ScheduledDestination } & (
+/** What an admin should know about scheduled backups. */
+export type BackupWarning =
   | { kind: 'failed'; at: string; reason: string }
   | { kind: 'stale'; lastSuccessAt: string | null }
-  /** After a restore, the remote waits for an admin. */
-  | { kind: 'paused' }
-)
-
-/** The online storage backups go to. The pasted setup is never sent back. */
-export interface BackupRemoteView {
-  /** False when this Pond has no rclone. */
-  available: boolean
-  configured: boolean
-  /** The service's plain name, such as "Dropbox". */
-  service: string | null
-  folder: string | null
-  enabled: boolean
-  paused: boolean
-}
+  /** The schedule is on, but there is nowhere to save. */
+  | { kind: 'no_destination' }
 
 export interface BackupView {
   passphraseSet: boolean
@@ -42,9 +27,7 @@ export interface BackupView {
     /** False when enabled but the marker file is missing, such as an unplugged drive. */
     connected: boolean
   }
-  remote: BackupRemoteView
   lastFolderBackupAt: string | null
-  lastRemoteBackupAt: string | null
   lastDownloadAt: string | null
   running: boolean
   restorePending: boolean

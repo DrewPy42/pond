@@ -4,7 +4,6 @@ import { bootDatabase, finishRestore } from './backup/boot.js'
 import { createGatedFileStore } from './backup/fileGate.js'
 import { BackupLock } from './backup/lock.js'
 import { backupPaths } from './backup/paths.js'
-import { createRclone } from './backup/remote/rclone.js'
 import { RestoreService } from './backup/restore.js'
 import { createSafetyCopies } from './backup/safety.js'
 import { BackupService } from './backup/service.js'
@@ -81,9 +80,7 @@ await padHost.start() // loads installed pads (migrates and registers) before ta
 starting = false
 
 const lock = new BackupLock()
-const rclone = createRclone(config.rclonePath)
 const backups = new BackupService({
-  rclone,
   repos,
   crypto,
   db: backupDb,
@@ -202,7 +199,6 @@ const backupSchedule = startSyncScheduler({
 function shutdown(signal: string) {
   padJobs.stop()
   backupSchedule.stop()
-  rclone.stopAll() // an upload in progress is abandoned; the next scheduled run tries again
   log.info({ signal }, 'shutting down')
   scheduler.stop()
   server.close(() => {

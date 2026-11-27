@@ -19,7 +19,6 @@ import { PadHost } from '../lilypads/host.js'
 import { createLogger } from '../logger.js'
 import type { PadModule } from '@pond/sdk'
 import { createFakeBackupDb } from './fakeBackupDb.js'
-import { createFakeRclone, type FakeRclone } from './fakeRclone.js'
 import { createFakeFileStore } from './fakeFiles.js'
 import { createFakeRepos } from './fakeRepos.js'
 import { FakeSimpleFin } from './fakeSimpleFin.js'
@@ -36,8 +35,6 @@ export interface TestEnv {
   /** Script what the "bank" returns and inspect what we asked. */
   simplefin: FakeSimpleFin
   app: Express
-  /** The pretend online storage backups are uploaded to. */
-  rclone: FakeRclone
   /** How often Pond was asked to restart (to apply a restore). */
   restarts(): number
   /** Where backups go. Nothing is created unless a test asks for it. */
@@ -91,9 +88,7 @@ export function makeEnv(
   const lock = new BackupLock()
   let restarts = 0
   const newId = () => `id-${++idCounter}`
-  const rclone = createFakeRclone()
   const backups = new BackupService({
-    rclone,
     repos,
     crypto,
     db: backupDb,
@@ -139,7 +134,6 @@ export function makeEnv(
     files,
     simplefin,
     app: createApp(ctx),
-    rclone,
     paths,
     restarts: () => restarts,
     advance: (ms) => void (t += ms),
