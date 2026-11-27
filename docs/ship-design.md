@@ -8,9 +8,9 @@ The goal: someone with a Raspberry Pi can install Pond by following one page, us
 
 - Node 26 everywhere.
 - The development setup listens on this computer only (decision 18).
-- The production image (`deploy/Dockerfile`), with web serving and the `pond` command. Tried on a Mac (arm64) with made-up data, as user 1000 with a read-only filesystem and no extra privileges: setup, both official apps, a document upload, a backup and a restore with the automatic restart. amd64 and a real Pi are untested.
+- The production image (`deploy/Dockerfile`), with web serving and the `pond` command. Tried on a Mac (arm64) with made-up data, as user 1000 with a read-only filesystem and no extra privileges: setup, both official apps, a document upload, a backup and a restore with the automatic restart. amd64 and a real Pi were untested then (see "Results so far" for the Pi).
 
-- The compose file and Caddy (`deploy/compose.yml`), with decisions 13, 15 and 16. Tried on a Mac with made-up data, with test ports limited to that computer: the exported certificate verifies for a name and for an IP address and survives recreating the containers; the redirects; Secure cookies; a restore with the automatic restart and a 60 MB upload through Caddy; a faked `X-Forwarded-For` didn't change the address Pond records or get around the sign-in limit. **Not tried:** a Pi or any Linux host, trusting the certificate on a real device, a browser over this HTTPS setup, another device on the network, and `pond.local` name lookup.
+- The compose file and Caddy (`deploy/compose.yml`), with decisions 13, 15 and 16. Tried on a Mac with made-up data, with test ports limited to that computer: the exported certificate verifies for a name and for an IP address and survives recreating the containers; the redirects; Secure cookies; a restore with the automatic restart and a 60 MB upload through Caddy; a faked `X-Forwarded-For` didn't change the address Pond records or get around the sign-in limit. **Not tried then:** a Pi or any Linux host, trusting the certificate on a real device, a browser over this HTTPS setup, another device on the network, and `.local` name lookup. The Pi trial since covers some of these (see "Results so far").
 
 As built:
 
@@ -147,6 +147,34 @@ These can't be proved on a Mac. Each gets a recorded result.
 8. Cut the power while Pond is running, and during a restore.
 9. Update from one `0.9` release to the next.
 10. A security review of the whole app against `security.md`, fixing or documenting each difference.
+
+### Results so far (2026-11-27)
+
+The test Pi described in the amendment below, with **made-up data and very little of it.** Pond was built from source, following step-by-step instructions given as it went, **not an install page.** One person, one run of each.
+
+| Tried | Result |
+|---|---|
+| First install | Started healthy. Pond published no port, HTTPS answered, and plain HTTP redirected (checked on the Pi itself). Another app on the same machine kept running |
+| Certificate | Exported, copied to a Mac, and its fingerprint matched. Pond was then opened in a browser there. **Whether the browser trusted it without a warning wasn't recorded** |
+| Update from source | One update, with no core database migration. Pond came back healthy with the existing account |
+| Backup to the folder | Worked. 409 KB, readable only by user 1000 (and root). The file was copied off the Pi |
+| Backup cost | Slowest health response **2.58 s**; highest server memory seen **402 MB** |
+| Restore | Pond restarted by itself, and a change made after the backup was gone. About 6.6 s from stopping to "A backup was restored", with no error lines in the log output checked |
+| Restore cost | Slowest successful response 2.59 s; highest memory seen 439 MB; 19 health checks failed while restarting |
+| Reboot | Pond and Caddy started by themselves, Pond was healthy, and the backup file was still there |
+
+How cost was measured: from the Pi, a health request about every quarter second, noting the slowest, and the server process's resident memory sampled at the same time, so a very brief peak could be missed. Docker reported no per-container memory on this Pi.
+
+**The passphrase strength stays as it is** (scrypt work factor 18). A pause of a few seconds is acceptable for an occasional or overnight backup.
+
+Against the list above: item 3 is measured for **a very small database on 8 GB of memory** only. Item 4's automatic restart is done; restoring onto a fresh Pi isn't. Item 2 is partly done (a computer, not a phone). **Everything else is untried,** including a 4 GB Pi, amd64, larger data, setup without a code on the Pi, and another device trusting the certificate.
+
+Found by the trial, and since fixed: the setup code was hard to find (removed), and sign-in locked the name and password at the code step.
+
+**Still to do from the trial:**
+
+- Authenticator entries from different installs look the same; new ones should include Pond's address.
+- **For the install page:** other software on the same computer that can control Docker or act as an administrator, such as an automation or build agent, can read Pond's data, its keys, and Caddy's certificate authority key. With that key it could make certificates that trusting devices accept for **other websites** too. Give Pond a computer where nothing else has that access.
 
 ## Risks
 
