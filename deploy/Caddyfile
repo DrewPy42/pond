@@ -1,0 +1,35 @@
+# HTTPS in front of Pond, with a certificate from Caddy's own authority. Each device is told once
+# to trust that authority (docs/ship-design.md, decisions 15 to 17).
+{
+	# No control interface: settings come only from this file.
+	admin off
+	# This is a container; there is no system certificate list worth changing.
+	skip_install_trust
+	# The one redirect is written out below.
+	auto_https disable_redirects
+	# Browsers don't name the site when it is an IP address, so say which certificate to use.
+	default_sni {$POND_ADDRESS}
+
+	servers :443 {
+		# Only HTTP/1.1 and HTTP/2: HTTP/3 needs a UDP port, which isn't published.
+		protocols h1 h2
+		listener_wrappers {
+			# Plain HTTP arriving on the HTTPS port is only sent to HTTPS.
+			http_redirect
+			tls
+		}
+	}
+}
+
+https://{$POND_ADDRESS} {
+	tls internal
+	# Compress only the web app's own files, never pages of household data.
+	@files path /assets/*
+	encode @files zstd gzip
+	reverse_proxy pond:3210
+}
+
+# Reached only if compose.http-redirect.yml publishes it.
+http://{$POND_ADDRESS} {
+	redir https://{$POND_ADDRESS}{uri}
+}

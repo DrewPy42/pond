@@ -10,7 +10,15 @@ The goal: someone with a Raspberry Pi can install Pond by following one page, us
 - The development setup listens on this computer only (decision 18).
 - The production image (`deploy/Dockerfile`), with web serving and the `pond` command. Tried on a Mac (arm64) with made-up data, as user 1000 with a read-only filesystem and no extra privileges: setup, both official apps, a document upload, a backup and a restore with the automatic restart. amd64 and a real Pi are untested.
 
-Still to build in M9a: the compose file and Caddy (including decisions 13, 15 and 16; **until then the image sends the one-year HSTS header with subdomains, and is not for installing**), the audit log screen, licence files, the install page and the stale text.
+- The compose file and Caddy (`deploy/compose.yml`), with decisions 13, 15 and 16. Tried on a Mac with made-up data, with test ports limited to that computer: the exported certificate verifies for a name and for an IP address and survives recreating the containers; the redirects; Secure cookies; a restore with the automatic restart and a 60 MB upload through Caddy; a faked `X-Forwarded-For` didn't change the address Pond records or get around the sign-in limit. **Not tried:** a Pi or any Linux host, trusting the certificate on a real device, a browser over this HTTPS setup, another device on the network, and `pond.local` name lookup.
+
+As built:
+
+- The redirect port is a second compose file, `compose.http-redirect.yml`, switched on by `COMPOSE_FILE` in `.env`. Compose can't publish a port only when another port is 443, so Caddy refuses to start, with a plain message, if the redirect is on and HTTPS is on another port.
+- The backup folder is required, and Docker won't create it if it's missing. An unplugged drive is still caught by the marker file. **For the install page:** use a folder that exists even with the drive unplugged (such as the mount point itself); otherwise Pond may not start without the drive.
+- Pond refuses to start with a time zone that doesn't exist.
+
+Still to build in M9a: the audit log screen, licence files, the install page and the stale text.
 
 ## Where things stand
 

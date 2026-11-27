@@ -143,6 +143,7 @@ const app = createApp({
   },
   spaceRoutes: [],
   webDir: config.webDir,
+  hsts: config.hsts,
 })
 const server = app.listen(config.port, config.host, () => {
   log.info({ port: config.port, dataDir: config.dataDir }, 'Pond server listening')
