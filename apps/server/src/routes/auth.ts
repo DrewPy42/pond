@@ -26,6 +26,8 @@ export const usernameSchema = z
   .toLowerCase()
   .regex(/^[a-z0-9._-]{3,32}$/, '3-32 characters: letters, numbers, dot, dash, underscore')
 const displayNameSchema = z.string().trim().min(1).max(80)
+// Many authenticators show a code as "123 456", so spaces never count.
+const withoutSpaces = (code: string) => code.replace(/\s+/g, '')
 // Length limit protects Argon2 from huge inputs; strength is checked separately.
 const passwordSchema = z.string().max(256)
 
@@ -152,8 +154,9 @@ export function authRouter(ctx: AppContext): Router {
       if (user.totpEnabledAt && user.totpSecretEnc) {
         if (!body.code) return sendError(res, 401, 'totp_required')
         let ok = false
-        if (/^\d{6}$/.test(body.code)) {
-          ok = verifyTotp(ctx.crypto.decrypt(user.totpSecretEnc), body.code)
+        const digits = withoutSpaces(body.code)
+        if (/^\d{6}$/.test(digits)) {
+          ok = verifyTotp(ctx.crypto.decrypt(user.totpSecretEnc), digits)
         } else {
           const rc = repos.recoveryCodes.findUnused(user.id, hashRecoveryCode(body.code))
           if (rc) {
@@ -214,7 +217,13 @@ export function authRouter(ctx: AppContext): Router {
     res.json({ secret, uri: totpUri(secret, u.username) })
   })
 
-  const confirmBody = z.object({ code: z.string().regex(/^\d{6}$/) })
+  const confirmBody = z.object({
+    code: z
+      .string()
+      .max(32)
+      .transform(withoutSpaces)
+      .pipe(z.string().regex(/^\d{6}$/)),
+  })
   r.post(
     '/auth/totp/confirm',
     requireAuth({ allowPendingTotp: true }),
