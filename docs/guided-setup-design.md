@@ -1,6 +1,6 @@
 # Guided online storage setup (M8c): design
 
-**Status: proposed 2026-11-26. Not approved, not built.** It builds on M8b (`backup-design.md`).
+**Status: dropped 2026-11-27. Never approved or built.** rclone is being removed instead; see `simple-setup-design.md`. Kept as history.
 
 ## Why
 
