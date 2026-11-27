@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePadHost } from '@pond/sdk'
+import { usePadHost } from '@pond/sdk/client'
 import { onMounted, ref, watch } from 'vue'
 
 interface Note {

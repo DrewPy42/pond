@@ -13,6 +13,8 @@ const envSchema = z.object({
   POND_TIMEZONE: z.string().optional(),
   /** How often bank data is pulled (hours). Clamped to 4..24; SimpleFIN refreshes about daily. */
   POND_SYNC_INTERVAL_HOURS: z.coerce.number().optional(),
+  /** The built web app to serve. The production image sets it; development uses Vite instead. */
+  POND_WEB_DIR: z.string().optional(),
   /** Offer the template LilyPad (development only). */
   POND_DEV_PADS: z.enum(['true', 'false']).optional(),
   /** The one folder backups may be written to (a NAS share or USB drive mounted by Docker). */
@@ -40,6 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     cookieSecure: e.POND_COOKIE_SECURE
       ? e.POND_COOKIE_SECURE === 'true'
       : e.NODE_ENV === 'production',
+    webDir: e.POND_WEB_DIR ? path.resolve(e.POND_WEB_DIR) : null,
     dataDir,
     dbPath: path.join(dataDir, 'pond.db'),
     filesDir: path.join(dataDir, 'files'),

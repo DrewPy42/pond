@@ -10,6 +10,7 @@ import { healthRouter } from './routes/health.js'
 import { spacesRouter } from './routes/spaces.js'
 import { padsAdminRouter } from './routes/pads.js'
 import { usersRouter } from './routes/users.js'
+import { webRouter } from './web.js'
 
 export const VERSION = '0.0.0'
 
@@ -47,6 +48,9 @@ export function createApp(ctx: AppContext): Express {
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not_found' })
   })
+
+  // After /api, so an API address can never be answered with a page.
+  if (ctx.webDir) app.use(webRouter(ctx.webDir))
 
   const onError: ErrorRequestHandler = (err, _req, res, _next) => {
     ctx.log.error({ err: { name: err?.name, message: err?.message } }, 'unhandled error')

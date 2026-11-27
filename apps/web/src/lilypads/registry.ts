@@ -1,4 +1,4 @@
-import type { PadClientDefinition, PadClientModule } from '@pond/sdk'
+import type { PadClientDefinition, PadClientModule } from '@pond/sdk/client'
 
 /**
  * The web side of the official LilyPads (docs/lilypad-host-design.md, decision 1): every

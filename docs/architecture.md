@@ -39,6 +39,8 @@ One household runs one Pond install on its own hardware. Pond pulls read-only ba
 
 ### Runtime
 - One Docker image with the Node server and built web assets, plus a Caddy container for TLS.
+- The image is built by `deploy/Dockerfile`. When `POND_WEB_DIR` is set, as it is there, the server also serves the built web app: page addresses get `index.html`, a missing file is a 404, `/api` is never answered with a page, and only the hashed files under `assets/` are cached long-term. In development Vite serves the web app instead.
+- It runs as user 1000 and needs to write only to `/data`, `/backups` and `/tmp`, so the rest of its filesystem can be read-only.
 - Data lives on one volume, `/data`:
   - `pond.db` (SQLite)
   - `keys/master.key`

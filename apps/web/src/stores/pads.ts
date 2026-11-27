@@ -1,4 +1,4 @@
-import type { PadClientDefinition, PadPage, PadSidebarItem, PadWidget } from '@pond/sdk'
+import type { PadClientDefinition, PadPage, PadSidebarItem, PadWidget } from '@pond/sdk/client'
 import type { SpacePad } from '@pond/shared'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PAD_HOST, type PadHostApi } from '@pond/sdk'
+import { PAD_HOST, type PadHostApi } from '@pond/sdk/client'
 import { onErrorCaptured, provide, ref, type Component } from 'vue'
 import { api, apiDownload, apiUpload } from '../../api'
 import { withReauth } from '../../composables/padFiles'

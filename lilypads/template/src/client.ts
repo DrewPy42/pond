@@ -1,4 +1,4 @@
-import { definePadClient, type PadClientModule } from '@pond/sdk'
+import { definePadClient, type PadClientModule } from '@pond/sdk/client'
 import NotesPage from './NotesPage.vue'
 import NotesWidget from './NotesWidget.vue'
 import TransactionNote from './TransactionNote.vue'

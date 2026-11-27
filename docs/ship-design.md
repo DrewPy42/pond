@@ -1,8 +1,16 @@
 # Ship (M9): design
 
-**Status: approved 2026-11-26. Not built.** The amendment at the end (ports, no runner, HTTPS, certificates and the development setup) is approved too. Where it differs from the text above it, the amendment wins.
+**Status: approved 2026-11-26. M9a is partly built** (see "Built so far"). The amendment at the end (ports, no runner, HTTPS, certificates and the development setup) is approved too. Where it differs from the text above it, the amendment wins.
 
 The goal: someone with a Raspberry Pi can install Pond by following one page, use it over `https` at home, and update it with one command without losing data.
+
+## Built so far
+
+- Node 26 everywhere.
+- The development setup listens on this computer only (decision 18).
+- The production image (`deploy/Dockerfile`), with web serving and the `pond` command. Tried on a Mac (arm64) with made-up data, as user 1000 with a read-only filesystem and no extra privileges: setup, both official apps, a document upload, a backup and a restore with the automatic restart. amd64 and a real Pi are untested.
+
+Still to build in M9a: the compose file and Caddy (including decisions 13, 15 and 16; **until then the image sends the one-year HSTS header with subdomains, and is not for installing**), the audit log screen, licence files, the install page and the stale text.
 
 ## Where things stand
 
