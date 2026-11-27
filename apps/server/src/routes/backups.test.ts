@@ -630,15 +630,15 @@ describe('/api/setup/restore (a brand-new install)', () => {
   })
 
   /**
-   * Inputs:   a backup whose header asks for work factor 19 (Pond writes 18), checked on a new
-   *           install and then by a signed-in admin
-   * Expected: the new install refuses it from the header alone, as asking for too much memory;
-   *           signed in, the higher limit lets it past that check
+   * Inputs:   a made-up backup header asking for work factor 19 (Pond writes 18), with a salt too
+   *           short to be real, checked on a new install and then by a signed-in admin
+   * Expected: the new install refuses it from the header alone, as asking for too much memory.
+   *           Signed in, the higher limit lets it past that check, and the encryption library
+   *           rejects the salt. The salt keeps the test quick: with a real one this would do the
+   *           costly passphrase work, which timed out on a slower CI machine
    */
   it('refuses a backup that asks for more memory than Pond writes', async () => {
-    const costly = Buffer.from(
-      'age-encryption.org/v1\n-> scrypt AAAAAAAAAAAAAAAAAAAAAA 19\nAAAA\n--- AAAA\n',
-    )
+    const costly = Buffer.from('age-encryption.org/v1\n-> scrypt AAAA 19\nAAAA\n--- AAAA\n')
     const env = await fresh()
     const id = await send(env, costly)
     const res = await checkIt(env, id, 'any passphrase at all')
@@ -651,6 +651,6 @@ describe('/api/setup/restore (a brand-new install)', () => {
       uploadId: up.body.uploadId,
       passphrase: 'any passphrase at all',
     })
-    expect(signedIn.body.message ?? '').not.toContain('more memory')
+    expect(signedIn.body.error).toBe('damaged_backup')
   })
 })
