@@ -143,6 +143,8 @@ The core shell owns the sidebar, Space switcher, settings and dashboard. LilyPad
 | Transaction detail panel | Extra panel on a transaction |
 | Space settings tab | The pad's per-Space settings |
 
+A pad imports the web side (`definePadClient`, `usePadHost` and their types) from `@pond/sdk/client`, and everything else from `@pond/sdk`. **Code the server loads must not import `@pond/sdk/client`:** the production server has no browser packages such as Vue.
+
 The client entry exports Vue components registered against these points. Use the shared theme tokens; no global CSS.
 
 ## Lifecycle

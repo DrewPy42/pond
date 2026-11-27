@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePadHost } from '@pond/sdk'
+import { usePadHost } from '@pond/sdk/client'
 import { computed, onMounted, ref } from 'vue'
 import { DOC_TYPES, MAX_DOCUMENT_BYTES, labelOf, type DocumentView, type PersonView } from './types'
 import { errorCode, items } from './ui'

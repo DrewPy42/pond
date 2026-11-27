@@ -142,6 +142,7 @@ const app = createApp({
     setTimeout(() => shutdown('restore'), 500)
   },
   spaceRoutes: [],
+  webDir: config.webDir,
 })
 const server = app.listen(config.port, config.host, () => {
   log.info({ port: config.port, dataDir: config.dataDir }, 'Pond server listening')

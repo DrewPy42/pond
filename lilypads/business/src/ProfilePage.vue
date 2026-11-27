@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePadHost } from '@pond/sdk'
+import { usePadHost } from '@pond/sdk/client'
 import { onMounted, ref } from 'vue'
 import RevealTaxId from './RevealTaxId.vue'
 import TaxIdInput from './TaxIdInput.vue'

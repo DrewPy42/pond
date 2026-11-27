@@ -105,7 +105,7 @@ Everything that needs to know which pads exist goes through one interface, `PadS
 - Pads use the **shared UI components** through `@pond/sdk/ui` (re-exports of `components/common`), the Vuetify theme, and the SDK's API client. They bring no CSS framework and no global CSS, and cannot remove or replace core items.
 
 ### The SDK (`packages/sdk`, MIT)
-- Exports `definePad`, `definePadClient`, the `PadContext` and request types, the manifest schema, `z` (zod, re-exported so versions can't drift) and the UI re-exports.
+- Exports `definePad`, `definePadClient` (from `@pond/sdk/client` since M9a), the `PadContext` and request types, the manifest schema, `z` (zod, re-exported so versions can't drift) and the UI re-exports.
 - **`@pond/sdk/testing`** ships an in-memory host: fake core data, fake table store, a clock, and an event emitter. **A pad's tests run entirely on fakes, without Pond core**, the same philosophy as our own tests. We use it for both official pads.
 
 ### Ready for isolation later

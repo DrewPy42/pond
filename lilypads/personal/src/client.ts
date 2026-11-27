@@ -1,4 +1,4 @@
-import { definePadClient, type PadClientModule } from '@pond/sdk'
+import { definePadClient, type PadClientModule } from '@pond/sdk/client'
 import BudgetPage from './BudgetPage.vue'
 import BudgetWidget from './BudgetWidget.vue'
 import GoalsPage from './GoalsPage.vue'

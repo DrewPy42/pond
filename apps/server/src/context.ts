@@ -36,6 +36,8 @@ export interface AppContext {
   restores: RestoreService
   /** Stops Pond so a confirmed restore is applied at the next start. */
   restart: () => void
+  /** The built web app to serve, in production. In development Vite serves it instead. */
+  webDir?: string | null
   /** Filled in as Space-scoped routes are declared; used by the permission tests. */
   spaceRoutes: SpaceRouteInfo[]
 }

@@ -25,7 +25,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
 - **Rate limiting:** per IP and per username, with exponential backoff, and audit entries on lockout.
-- **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi (until M9 builds that command into the image: `pnpm --filter @pond/server pond admin reset-password <user>`). It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
+- **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi. The command is built into the production image; the production compose file isn't built yet (M9a). With the development setup, run `pnpm --filter @pond/server pond admin reset-password <user>`. It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
 
 ## Sessions
 

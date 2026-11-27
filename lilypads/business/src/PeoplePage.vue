@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePadHost } from '@pond/sdk'
+import { usePadHost } from '@pond/sdk/client'
 import { formatMoney } from '@pond/shared'
 import { computed, onMounted, ref } from 'vue'
 import { today } from './logic'

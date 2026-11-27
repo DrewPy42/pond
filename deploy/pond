@@ -1,0 +1,4 @@
+#!/bin/sh
+# `pond` inside the production image, for example:
+#   docker compose exec pond pond admin reset-password <username>
+cd /app/apps/server && exec node --import tsx src/cli/pond.ts "$@"
