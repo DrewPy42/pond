@@ -7,7 +7,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 | Risk | Defense |
 |---|---|
 | Someone else on the home Wi-Fi | Login required on every route; HTTPS via Caddy; secure cookies; login rate limits |
-| First-run admin hijack | Admin setup requires a one-time code printed to the server console/logs |
+| First-run admin hijack | Setup closes as soon as any account exists and refuses requests from other origins. **Until then, whoever can reach Pond can claim it** (see "First run") |
 | Weak or stolen passwords | Argon2id; TOTP 2FA; re-enter password for sensitive actions |
 | Household members seeing each other's data | Every API call checked against Space membership and role; deny by default |
 | A copy of the database or files folder alone | Secrets and uploaded files encrypted with AES-256-GCM, key stored separately |
@@ -20,7 +20,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 
 ## Authentication
 
-- **First run:** the server generates a one-time setup code and prints it to the console/logs. Creating the first admin requires that code. The code expires after use.
+- **First run:** there is no setup code (`simple-setup-design.md`). While Pond has no account, **anyone who can reach it** can create the admin account or restore their own backup onto it, and the same is true if it ever loses its database. So set Pond up as soon as it starts, and never make a new Pond reachable from the internet. What protects it, with nothing for the user to do: both close once any account exists (checked on every request, and creating the first admin is all-or-nothing); both refuse requests a browser marks as coming from another origin (`Sec-Fetch-Site`), including another app on the same machine, and Pond never allows another origin to send it JSON or files; Caddy serves only the configured address; and first-run restore is limited (see "Backups"). The setup screen warns anyone who has used this Pond before to stop.
 - **Passwords:** Argon2id with OWASP-recommended parameters, tuned to stay under ~500 ms on a Pi 4. Minimum 12 characters, and a check against a small common-password list.
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
@@ -59,7 +59,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 ## Backups
 
 - A backup holds all data and the master key, protected only by its passphrase (age, scrypt). It is only as strong as that passphrase.
-- Settings, making a backup and every restore step need an admin and the password re-check. A download is single-use and tied to the session that made it. On a new install, restore needs the console setup code and closes once any account exists.
+- Settings, making a backup and every restore step need an admin and the password re-check. A download is single-use and tied to the session that made it. On a new install, restore needs no account and closes once any account exists. Because anyone who can reach a new Pond can use it, a backup there may ask for no more than the scrypt work factor Pond writes (18; signed in, 20), and an address must wait after five failed checks. Someone on the network can still interrupt a first-run restore by uploading their own file.
 - Uploaded backups are untrusted: a strict archive reader, a staging folder, and checksum, integrity, key and version checks all pass before anything is replaced.
 - On this computer, backups are written only to the folder mounted for them. No local path is ever typed in the app.
 - **Online storage (rclone):** a pasted setup is untrusted. Only listed services, settings and value shapes are accepted, because others can run programs, read server files or send sign-in tokens elsewhere, and Pond writes its own config from them. rclone runs without a shell, with a bare environment and only `copyto`, `lsjson` and `deletefile`. The setup is encrypted at rest and never returned, logged or audited; rclone's error text is never logged or shown. The program is pinned by checksum in the image and must be kept up to date.

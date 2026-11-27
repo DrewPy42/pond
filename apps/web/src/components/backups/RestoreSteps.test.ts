@@ -31,19 +31,18 @@ describe('<RestoreSteps first-run />', () => {
 
   /**
    * Function: RestoreSteps (check, then confirm)
-   * Inputs:   setup code "AAAA", a file, a wrong passphrase then the right one, then the checkbox
-   * Expected: the file is uploaded once; every request carries the setup code; the summary and
-   *           warning show; Restore is disabled until the box is ticked, then confirms with
-   *           replaceEverything and shows that Pond is restarting
+   * Inputs:   a file, a wrong passphrase then the right one, then the checkbox
+   * Expected: no code is asked for; the file is uploaded once, to the first-run routes; the
+   *           summary and warning show; Restore is disabled until the box is ticked, then confirms
+   *           with replaceEverything and shows that Pond is restarting
    */
   it('uploads once, shows the contents and needs an explicit tick to restore', async () => {
     uploadMock.mockResolvedValue({ uploadId: 'up1' })
     apiMock.mockRejectedValueOnce(new ApiError(400, 'wrong_passphrase', { message: 'Nope' }))
     const wrapper = mountWithVuetify(RestoreSteps, { props: { firstRun: true, pollMs: 60_000 } })
-    const [code, passphrase] = wrapper
-      .findAll('input')
-      .filter((i) => i.attributes('type') !== 'file')
-    await code!.setValue('AAAA')
+    const typed = wrapper.findAll('input').filter((i) => i.attributes('type') !== 'file')
+    expect(typed).toHaveLength(1) // only the passphrase
+    const passphrase = typed[0]
     await wrapper.findComponent(VFileInput).setValue(new File(['x'], 'a.pond'))
     await passphrase!.setValue('wrong')
     await wrapper.findComponent(VForm).trigger('submit')
@@ -55,7 +54,6 @@ describe('<RestoreSteps first-run />', () => {
     await flushPromises()
     expect(uploadMock).toHaveBeenCalledTimes(1)
     expect(uploadMock.mock.calls[0]![0]).toBe('/api/setup/restore/upload')
-    expect(uploadMock.mock.calls[0]![2]).toEqual({ 'x-setup-code': 'AAAA' })
     expect(wrapper.text()).toContain('Transactions: 500')
     expect(wrapper.text()).toContain('Mind this')
     expect(wrapper.text()).toContain('Everything now in Pond will be replaced')
@@ -72,7 +70,6 @@ describe('<RestoreSteps first-run />', () => {
       {
         method: 'POST',
         body: { uploadId: 'up1', replaceEverything: true },
-        headers: { 'x-setup-code': 'AAAA' },
       },
     ])
     expect(wrapper.text()).toContain('Pond is restarting')

@@ -47,7 +47,7 @@ Each milestone ends with working, tested software.
 | # | Milestone | Done when |
 |---|---|---|
 | M0 | Scaffold | Monorepo, lint/test/CI, Docker dev setup, Vue shell with gloxV theme, crypto module, migrations running |
-| M1 | Identity | First-run setup code, users, password + TOTP, sessions, Spaces, members, roles, permission middleware with tests, audit log |
+| M1 | Identity | First-run setup (its setup code was removed in M9a), users, password + TOTP, sessions, Spaces, members, roles, permission middleware with tests, audit log |
 | M2 | Ledger | Manual accounts, transactions, splits (invariant enforced), categories with seeds, transfer links, balance snapshots, transactions UI |
 | M3 | SimpleFIN | Connect via Setup Token, account discovery and Space assignment, scheduled sync, pending reconciliation |
 | M4 | Rules & import | Rules engine and UI; CSV import with column mapping, duplicate detection, review |

@@ -480,50 +480,27 @@ describe('/api/setup/restore (a brand-new install)', () => {
     await writeTree(dataDir, { 'keys/master.key': randomBytes(32) })
     return env
   }
-  const code = (env: ReturnType<typeof makeEnv>) => ({
-    'x-setup-code': env.ctx.setupCode.reveal()!,
-  })
+  const ROUTES = ['upload', 'check', 'confirm']
+  const checkIt = (env: ReturnType<typeof makeEnv>, uploadId: string, passphrase: string) =>
+    request(env.app).post('/api/setup/restore/check').send({ uploadId, passphrase })
+  const send = async (env: ReturnType<typeof makeEnv>, bytes: Buffer) =>
+    (await upload(env, new Client(env.app), '/api/setup/restore/upload', bytes)).body
+      .uploadId as string
 
   /**
-   * Inputs:   no setup code and a wrong one, on every first-run restore route
-   * Expected: 403, and nothing is written
-   */
-  it('needs the setup code from the server console', async () => {
-    for (const step of ['upload', 'check', 'confirm']) {
-      for (const headers of [{}, { 'x-setup-code': 'AAAA-BBBB-CCCC' }] as const) {
-        const env = await fresh() // a fresh one each time, so the rate limit stays out of the way
-        const res = await upload(
-          env,
-          new Client(env.app),
-          `/api/setup/restore/${step}`,
-          Buffer.from('x'),
-          headers as Record<string, string>,
-        )
-        expect(res.status, step).toBe(403)
-        expect(await exists(env.paths.restoreDir)).toBe(false)
-      }
-    }
-  })
-
-  /**
-   * Inputs:   the right setup code, a backup, its passphrase and the confirmation
+   * Inputs:   a backup, its passphrase and the confirmation, with no account and no code
    * Expected: the restore is marked ready (requested by no one) and Pond asks to restart
    */
   it('restores without any account', async () => {
     const env = await fresh()
     const anon = new Client(env.app)
-    const up = await upload(env, anon, '/api/setup/restore/upload', await makeBackup(), code(env))
+    const up = await upload(env, anon, '/api/setup/restore/upload', await makeBackup())
     expect(up.status).toBe(201)
-    const post = (url: string, body: object) => request(env.app).post(url).set(code(env)).send(body)
-    const checked = await post('/api/setup/restore/check', {
-      uploadId: up.body.uploadId,
-      passphrase: BACKUP_PASSPHRASE,
-    })
+    const checked = await checkIt(env, up.body.uploadId, BACKUP_PASSPHRASE)
     expect(checked.status).toBe(200)
-    const done = await post('/api/setup/restore/confirm', {
-      uploadId: up.body.uploadId,
-      replaceEverything: true,
-    })
+    const done = await request(env.app)
+      .post('/api/setup/restore/confirm')
+      .send({ uploadId: up.body.uploadId, replaceEverything: true })
     expect(done.status).toBe(202)
     expect(env.restarts()).toBe(1)
     expect(JSON.parse(await fs.readFile(journalPath(env.paths), 'utf8'))).toMatchObject({
@@ -533,37 +510,94 @@ describe('/api/setup/restore (a brand-new install)', () => {
   })
 
   /**
-   * Inputs:   an install with an account, with the code still shown as active (a race), and after
-   *           normal setup
-   * Expected: 404 both ways; it is closed once any account exists
+   * Inputs:   every first-run restore route once an account exists
+   * Expected: 404 and nothing written
    */
   it('is closed once any account exists', async () => {
     const env = await fresh()
-    const saved = code(env)
     await bootstrapAdmin(env)
-    const res = await upload(
+    for (const step of ROUTES) {
+      const url = `/api/setup/restore/${step}`
+      const res = await upload(env, new Client(env.app), url, Buffer.from('x'))
+      expect(res.status, step).toBe(404)
+    }
+    expect(await exists(env.paths.restoreDir)).toBe(false)
+  })
+
+  /**
+   * Inputs:   every first-run restore route, marked by the browser as coming from another
+   *           website or another app on the same machine
+   * Expected: 403 cross_origin and nothing written
+   */
+  it('refuses requests from another origin', async () => {
+    const env = await fresh()
+    for (const step of ROUTES) {
+      for (const site of ['cross-site', 'same-site']) {
+        const url = `/api/setup/restore/${step}`
+        const res = await upload(env, new Client(env.app), url, Buffer.from('x'), {
+          'Sec-Fetch-Site': site,
+        })
+        expect(res.status, `${step} ${site}`).toBe(403)
+        expect(res.body.error).toBe('cross_origin')
+      }
+    }
+    expect(await exists(env.paths.restoreDir)).toBe(false)
+    const own = await upload(
       env,
       new Client(env.app),
       '/api/setup/restore/upload',
-      Buffer.from('x'),
-      saved,
+      await makeBackup(),
+      { 'Sec-Fetch-Site': 'same-origin' },
     )
-    expect(res.status).toBe(404)
-    const racing = await fresh()
-    racing.ctx.repos.users.create({
-      id: 'u',
-      username: 'ann',
-      displayName: 'Ann',
-      passwordHash: 'h',
-      isAdmin: true,
+    expect(own.status).toBe(201)
+  })
+
+  /**
+   * Inputs:   five wrong passphrases from one address, then the right one at once and again
+   *           after the wait
+   * Expected: five refusals, then 429 with Retry-After even for the right passphrase, then
+   *           success once the time has passed; the lockout is audited with no passphrase
+   */
+  it('makes an address wait after five failed checks', async () => {
+    const env = await fresh()
+    const id = await send(env, await makeBackup())
+    for (let i = 0; i < 5; i++)
+      expect((await checkIt(env, id, 'not the right passphrase')).body.error).toBe(
+        'wrong_passphrase',
+      )
+    const locked = await checkIt(env, id, BACKUP_PASSPHRASE)
+    expect(locked.status).toBe(429)
+    expect(locked.headers['retry-after']).toBeDefined()
+    env.advance(31_000)
+    expect((await checkIt(env, id, BACKUP_PASSPHRASE)).status).toBe(200)
+
+    const entries = env.ctx.repos.audit.list({ limit: 50 })
+    expect(entries.map((e) => e.action)).toContain('auth.lockout')
+    expect(JSON.stringify(entries)).not.toContain('passphrase')
+  })
+
+  /**
+   * Inputs:   a backup whose header asks for work factor 19 (Pond writes 18), checked on a new
+   *           install and then by a signed-in admin
+   * Expected: the new install refuses it from the header alone, as asking for too much memory;
+   *           signed in, the higher limit lets it past that check
+   */
+  it('refuses a backup that asks for more memory than Pond writes', async () => {
+    const costly = Buffer.from(
+      'age-encryption.org/v1\n-> scrypt AAAAAAAAAAAAAAAAAAAAAA 19\nAAAA\n--- AAAA\n',
+    )
+    const env = await fresh()
+    const id = await send(env, costly)
+    const res = await checkIt(env, id, 'any passphrase at all')
+    expect(res.body.error).toBe('not_a_backup')
+    expect(res.body.message).toContain('more memory')
+
+    const w = await world()
+    const up = await upload(w.env, w.admin.client, '/api/backups/restore/upload', costly)
+    const signedIn = await w.admin.client.post('/api/backups/restore/check', {
+      uploadId: up.body.uploadId,
+      passphrase: 'any passphrase at all',
     })
-    const second = await upload(
-      racing,
-      new Client(racing.app),
-      '/api/setup/restore/upload',
-      Buffer.from('x'),
-      code(racing),
-    )
-    expect(second.status).toBe(404)
+    expect(signedIn.body.message ?? '').not.toContain('more memory')
   })
 })

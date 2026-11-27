@@ -78,7 +78,7 @@ export async function writeArchive(o: {
 }
 
 /** Checks the unencrypted header before any expensive or memory-hungry work. */
-async function checkHeader(path: string): Promise<void> {
+async function checkHeader(path: string, maxWorkFactor: number): Promise<void> {
   const handle = await fsp.open(path, 'r')
   try {
     const buffer = Buffer.alloc(256)
@@ -87,15 +87,21 @@ async function checkHeader(path: string): Promise<void> {
     const m = /^-> scrypt \S+ (\d{1,2})$/.exec(stanza)
     if (magic !== 'age-encryption.org/v1' || !m)
       throw new BackupError('not_a_backup', 'This is not a Pond backup file.')
-    if (Number(m[1]) > MAX_WORK_FACTOR)
+    // The library refuses a header with a second passphrase entry before doing any work, so
+    // the first one is the one that counts.
+    if (Number(m[1]) > Math.min(maxWorkFactor, MAX_WORK_FACTOR))
       throw new BackupError('not_a_backup', 'This file asks for more memory than Pond will use.')
   } finally {
     await handle.close()
   }
 }
 
-async function openPlaintext(path: string, passphrase: string): Promise<AsyncIterable<Uint8Array>> {
-  await checkHeader(path)
+async function openPlaintext(
+  path: string,
+  passphrase: string,
+  maxWorkFactor: number,
+): Promise<AsyncIterable<Uint8Array>> {
+  await checkHeader(path, maxWorkFactor)
   const decrypter = new Decrypter()
   decrypter.addPassphrase(passphrase)
   const source = Readable.toWeb(fs.createReadStream(path)) as unknown as ReadableStream<Uint8Array>
@@ -128,10 +134,12 @@ export type EntrySink = (entry: ManifestEntry) => Promise<fsp.FileHandle | null>
 export async function readArchive(o: {
   source: string
   passphrase: string
+  /** The most scrypt work (and so memory) the file may ask for. Never above Pond's own cap. */
+  maxWorkFactor?: number
   onManifest?: (manifest: Manifest) => Promise<void> | void
   sink?: EntrySink
 }): Promise<Manifest> {
-  const plain = await openPlaintext(o.source, o.passphrase)
+  const plain = await openPlaintext(o.source, o.passphrase, o.maxWorkFactor ?? MAX_WORK_FACTOR)
   let manifest: Manifest | null = null
   const waiting = new Map<string, ManifestEntry>()
   await readTar(plain, async (name, size, data) => {
