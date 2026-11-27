@@ -133,6 +133,58 @@ describe('GET /api/setup/status and POST /api/setup (first-run admin creation)',
   })
 })
 
+describe('POST /api/auth/totp/enroll: the name of the authenticator entry', () => {
+  /** The name an authenticator app gets when two-step sign-in is set up at this address. */
+  async function entryFor(host: string) {
+    const env = makeEnv()
+    const c = new Client(env.app)
+    await c.post('/api/setup', { username: 'ann', displayName: 'A', password: PASSWORD })
+    const cookie = [...c.jar].map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('; ')
+    const res = await request(env.app)
+      .post('/api/auth/totp/enroll')
+      .set('Host', host)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', c.jar.get('pond_csrf')!)
+      .send({})
+    const uri = new URL(res.body.uri)
+    return {
+      label: decodeURIComponent(uri.pathname.slice(1)),
+      issuer: uri.searchParams.get('issuer'),
+      secret: uri.searchParams.get('secret') === res.body.secret,
+    }
+  }
+
+  /**
+   * Inputs:   enrollment reached as pond.local, 192.168.1.20, Pi.local:8443 and localhost:3210
+   * Expected: the entry names that address (lower case, no port, which an entry name can't
+   *           hold), so two installs don't look alike; the secret is unchanged
+   */
+  it.each([
+    ['pond.local', 'pond.local'],
+    ['192.168.1.20', '192.168.1.20'],
+    ['Pi.local:8443', 'pi.local'],
+    ['localhost:3210', 'localhost'],
+  ])('names the address for %s', async (host, shown) => {
+    expect(await entryFor(host)).toEqual({
+      label: `Pond (${shown}):ann`,
+      issuer: `Pond (${shown})`,
+      secret: true,
+    })
+  })
+
+  /**
+   * Inputs:   an IPv6 address (its colons would split the name), a name with other characters,
+   *           and one far too long
+   * Expected: the entry is just "Pond"
+   */
+  it.each(['[fd00::1]:443', 'bad_host:label?x=1', `${'a'.repeat(120)}.local`])(
+    'falls back to "Pond" for %s',
+    async (host) => {
+      expect(await entryFor(host)).toEqual({ label: 'Pond:ann', issuer: 'Pond', secret: true })
+    },
+  )
+})
+
 describe('authenticator codes typed with spaces', () => {
   /**
    * Inputs:   the right code written as many authenticators show it, "123 456", both when

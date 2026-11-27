@@ -214,7 +214,7 @@ export function authRouter(ctx: AppContext): Router {
     const secret = newTotpSecret()
     repos.users.update(u.id, { totpSecretEnc: ctx.crypto.encrypt(secret) })
     // The secret is shown once, for the authenticator app; it is stored encrypted.
-    res.json({ secret, uri: totpUri(secret, u.username) })
+    res.json({ secret, uri: totpUri(secret, u.username, req.hostname) })
   })
 
   const confirmBody = z.object({

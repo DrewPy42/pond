@@ -173,7 +173,7 @@ Found by the trial, and since fixed: the setup code was hard to find (removed), 
 
 **Still to do from the trial:**
 
-- Authenticator entries from different installs look the same; new ones should include Pond's address.
+- ~~Authenticator entries from different installs look the same.~~ Done since: new entries are named `Pond (<address>)`, using the address Pond is reached by, without the port. Entries already saved don't change.
 - **For the install page:** other software on the same computer that can control Docker or act as an administrator, such as an automation or build agent, can read Pond's data, its keys, and Caddy's certificate authority key. With that key it could make certificates that trusting devices accept for **other websites** too. Give Pond a computer where nothing else has that access.
 
 ## Risks
