@@ -16,6 +16,7 @@ export const ACTIONS: Record<string, string> = {
   'auth.login': 'Signed in',
   'auth.login_failed': 'Sign-in failed',
   'auth.lockout': 'Too many failed tries, so Pond made them wait',
+  'auth.attempts_blocked': 'Blocked more sign-in tries during a wait',
   'auth.recovery_code_used': 'Used a recovery code to sign in',
   'auth.totp_enabled': 'Turned on two-step sign-in',
   'auth.password_changed': 'Changed their password',
@@ -80,6 +81,12 @@ export interface AuditLine {
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
 
+/** A time of day, to the second: a flood can start and end within a minute. */
+const clock = (value: unknown): string => {
+  const at = new Date(text(value))
+  return Number.isNaN(at.getTime()) ? '' : at.toLocaleTimeString()
+}
+
 const user = (names: AuditNames, id: string | null) =>
   (id && names.users.get(id)) || 'a removed user'
 
@@ -102,7 +109,8 @@ function who(e: AuditEntryView, names: AuditNames): string {
   if (e.actorType === 'user' && e.actorId) return names.users.get(e.actorId) ?? 'A removed user'
   // An app records its own actions under its own name, not the person using it.
   if (e.actorType === 'lilypad') return appName(names, e.actorId)
-  if (e.action === 'auth.login_failed' || e.action === 'auth.lockout') return 'Not signed in'
+  if (['auth.login_failed', 'auth.lockout', 'auth.attempts_blocked'].includes(e.action))
+    return 'Not signed in'
   return 'Pond'
 }
 
@@ -115,12 +123,18 @@ function details(e: AuditEntryView, names: AuditNames): string {
       break
     case 'auth.login_failed':
     case 'auth.lockout':
-      // What was typed as a username is never shown unless it is a real account: someone
-      // may have typed a password there by mistake.
+      // Pond records nothing that was typed: the words come from whether an account matched.
       if (meta.scope === 'setup_restore') out.push('restoring during first-time setup')
       else if (e.targetId) out.push(`for ${user(names, e.targetId)}`)
-      else if (e.action === 'auth.login_failed') out.push("for a username that doesn't exist")
+      else if (!meta.scope) out.push("for a username that doesn't exist")
       break
+    case 'auth.attempts_blocked': {
+      if (typeof meta.count === 'number') out.push(`${meta.count.toLocaleString()} blocked`)
+      const [first, last] = [clock(meta.first), clock(meta.last)]
+      if (first && last) out.push(first === last ? `at ${first}` : `from ${first} to ${last}`)
+      if (meta.ip === null) out.push('from other addresses')
+      break
+    }
     case 'auth.password_reset_from_console':
       out.push(`for ${user(names, e.targetId)}`)
       if (meta.removedTwoFactor === true) out.push('two-step sign-in turned off')
@@ -166,7 +180,7 @@ function details(e: AuditEntryView, names: AuditNames): string {
         out.push('and deleted its information')
   }
   if (e.spaceId) out.push(`Space: ${names.spaces.get(e.spaceId) ?? 'one that was deleted'}`)
-  if (ip) out.push(`from ${ip}`)
+  if (ip) out.push(`address ${ip}`)
   return out.join(' · ')
 }
 

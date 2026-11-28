@@ -1,3 +1,4 @@
+import type { BlockedTally } from './auth/blockedAttempts.js'
 import { newId } from './db/ids.js'
 import type { AuditRepo } from './repos/types.js'
 
@@ -41,4 +42,28 @@ export function recordAudit(
     spaceId: entry.spaceId ?? null,
     meta: scrubMeta(entry.meta),
   })
+}
+
+/** Writes one entry for each finished (or abandoned) period of refused sign-in attempts. */
+export function recordBlockedAttempts(
+  repo: AuditRepo,
+  tallies: BlockedTally[],
+  now: Date,
+  makeId: () => string,
+): void {
+  for (const t of tallies)
+    recordAudit(
+      repo,
+      {
+        action: 'auth.attempts_blocked',
+        meta: {
+          ip: t.ip,
+          count: t.count,
+          first: new Date(t.firstAt).toISOString(),
+          last: new Date(t.lastAt).toISOString(),
+        },
+      },
+      now,
+      makeId,
+    )
 }

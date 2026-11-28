@@ -129,14 +129,17 @@ export function authRouter(ctx: AppContext): Router {
       const userKey = `user:${body.username}`
       const wait = Math.max(ctx.limiter.retryAfterMs(ipKey), ctx.limiter.retryAfterMs(userKey))
       if (wait > 0) {
+        ctx.blocked.note(ip(req), wait, ctx.now().getTime())
         res.setHeader('Retry-After', Math.ceil(wait / 1000))
         return sendError(res, 429, 'too_many_attempts')
       }
 
+      // What was typed as the username is never recorded: it may be a password typed in the
+      // wrong box. When it names an account, the entry points to the account instead.
       const fail = (userId?: string) => {
         const lockedIp = ctx.limiter.fail(ipKey)
         const lockedUser = ctx.limiter.fail(userKey)
-        const detail = { username: body.username, ip: ip(req) }
+        const detail = { ip: ip(req) }
         audit({ action: 'auth.login_failed', targetType: 'user', targetId: userId, meta: detail })
         if (lockedIp || lockedUser) {
           audit({ action: 'auth.lockout', targetType: 'user', targetId: userId, meta: detail })

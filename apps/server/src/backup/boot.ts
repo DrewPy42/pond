@@ -3,7 +3,7 @@
  * migrating existing data, and put the old data back if the restored database won't open.
  */
 import fs from 'node:fs/promises'
-import { openDb, runMigrations, schemaVersion, type DbHandle } from '../db/index.js'
+import { compactIfAsked, openDb, runMigrations, schemaVersion, type DbHandle } from '../db/index.js'
 import { createSqliteBackupDb } from '../repos/backupDb.js'
 import type { Repos } from '../repos/types.js'
 import { recordAudit } from '../audit.js'
@@ -17,12 +17,15 @@ export interface Booted {
   restore: SwapResult
   /** A safety copy was made before migrating; pad migrations in this start don't need another. */
   safetyCopyTaken: boolean
+  /** A cleanup a migration asked for didn't work. Pond runs, and tries again next start. */
+  cleanupFailed: boolean
 }
 
 export async function bootDatabase(
   paths: BackupPaths,
   now: () => Date = () => new Date(),
   migrate: (db: DbHandle) => void = runMigrations,
+  compact: (db: DbHandle) => void = compactIfAsked,
 ): Promise<Booted> {
   let restore = applyPendingRestore(paths)
   await fs.rm(paths.tmpDir, { recursive: true, force: true })
@@ -37,7 +40,14 @@ export async function bootDatabase(
       if (safetyCopyTaken)
         await createSafetyCopies({ db: createSqliteBackupDb(db), paths, now }).beforeMigration()
       migrate(db)
-      return { db, restore, safetyCopyTaken }
+      let cleanupFailed = false
+      try {
+        compact(db)
+      } catch {
+        // Not a reason to keep Pond from starting, or to undo a restore.
+        cleanupFailed = true
+      }
+      return { db, restore, safetyCopyTaken, cleanupFailed }
     } catch (e) {
       db.close()
       throw e

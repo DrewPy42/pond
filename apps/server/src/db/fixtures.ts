@@ -255,10 +255,50 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
       db.prepare(
         "INSERT INTO settings (scope, scope_id, key, value) VALUES ('global', '', 'backup.keep', '7')",
       ).run()
+      db.exec(`
+        INSERT INTO audit_log (id, at, actor_type, action, target_id, meta) VALUES
+          ('e1', '2030-01-01T00:00:01Z', 'system', 'auth.login_failed', NULL, '{"username":"hunter2-by-mistake","ip":"10.0.0.1"}'),
+          ('e2', '2030-01-01T00:00:02Z', 'system', 'auth.lockout', NULL, '{"username":"admin","ip":"10.0.0.2"}'),
+          ('e3', '2030-01-01T00:00:03Z', 'system', 'auth.login_failed', 'u1', '{"username":"ann","ip":"10.0.0.3"}'),
+          ('e4', '2030-01-01T00:00:04Z', 'system', 'auth.lockout', NULL, '{"scope":"setup_restore","ip":"10.0.0.4"}'),
+          ('e5', '2030-01-01T00:00:05Z', 'system', 'something.else', NULL, '{"username":"kept-other-action"}'),
+          ('e6', '2030-01-01T00:00:06Z', 'system', 'auth.login_failed', NULL, NULL);
+      `)
     },
     verify(db) {
       const row = one<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'backup.keep'")
       if (row.value !== '7') throw new Error(`settings row changed: ${row.value}`)
+      // v8 removes typed usernames that weren't accounts, keeping everything else.
+      const entries = db.prepare('SELECT id, target_id, meta FROM audit_log ORDER BY id').all() as {
+        id: string
+        target_id: string | null
+        meta: string | null
+      }[]
+      const after = entries.map((e) => [e.id, e.target_id, e.meta && JSON.parse(e.meta)])
+      const expected = [
+        ['e1', null, { ip: '10.0.0.1' }],
+        ['e2', null, { ip: '10.0.0.2' }],
+        ['e3', 'u1', { username: 'ann', ip: '10.0.0.3' }],
+        ['e4', null, { scope: 'setup_restore', ip: '10.0.0.4' }],
+        ['e5', null, { username: 'kept-other-action' }],
+        ['e6', null, null],
+      ]
+      if (JSON.stringify(after) !== JSON.stringify(expected))
+        throw new Error(`audit entries after the upgrade: ${JSON.stringify(after)}`)
+    },
+  },
+  {
+    version: 8,
+    description: 'M9a: typed usernames no longer recorded',
+    seed(db) {
+      db.exec(`
+        INSERT INTO audit_log (id, at, actor_type, action, meta)
+          VALUES ('a8', '2030-01-01T00:00:00Z', 'system', 'auth.attempts_blocked', '{"ip":"10.0.0.1","count":3}');
+      `)
+    },
+    verify(db) {
+      const row = one<{ meta: string }>(db, "SELECT meta FROM audit_log WHERE id = 'a8'")
+      if (row.meta !== '{"ip":"10.0.0.1","count":3}') throw new Error(`entry changed: ${row.meta}`)
     },
   },
 ]

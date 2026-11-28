@@ -16,7 +16,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 | Bad or tampered update | Signed release images; automatic backup before migrations |
 | Malicious LilyPad | v1 runs official pads only; API built for later isolation |
 | Injection, XSS | zod validation; Drizzle only; strict CSP; no `v-html` with user data |
-| Not knowing what happened | Audit log, which admins can read in Settings → Activity log (newest first, read only). The screen shows only chosen details of each entry. **A failed sign-in records the username as typed,** so a password typed in that box by mistake is stored and the log's API returns it to admins; the screen never shows a username that isn't an account's |
+| Not knowing what happened | Audit log, which admins can read in Settings → Activity log (newest first, read only). The screen shows only chosen details of each entry. **What is typed as a username is never recorded** (see "Sign-in records") |
 
 ## Authentication
 
@@ -25,6 +25,8 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 - **TOTP 2FA:** strongly encouraged, and required for admins. Secrets are stored encrypted, with one-time recovery codes.
 - **Passkeys:** **not in v1**. WebAuthn needs HTTPS on a real hostname, and browsers reject IP addresses. A home-network-only install usually has neither. Passkeys come with remote access (Tailscale provides real certificates) or once local HTTPS with a trusted hostname is set up.
 - **Rate limiting:** per IP and per username, with exponential backoff, and audit entries on lockout.
+- **Sign-in records:** a failed sign-in or lockout records the time and the address, and which account if one matched. **Nothing typed is recorded,** because it may be a password in the wrong box. Sign-in attempts refused during a wait are counted and saved as **one entry for each address and waiting period** (address, number, first and last time), so a flood is visible but can't fill the log. Beyond 500 addresses at once, the rest share one entry. The count is saved within about a minute of the wait ending, with no further attempt needed, and when Pond stops normally; **a crash or power cut loses counts not yet saved,** though the lockout is already recorded. This covers the sign-in form only, not other waits (password re-check, first-run restore).
+- **Removing earlier typed names:** migration 8 removed them from failed sign-ins and lockouts that weren't for an account, and Pond then rebuilds the database file so they aren't left in unused space or copied into new backups. **Backups made earlier still hold them, and so do safety copies, including the one made just before this migration;** the last 5 of each kind are kept. Rebuilding the file doesn't guarantee the drive itself has erased the old data.
 - **Recovery:** if someone is locked out, run `docker compose exec pond pond admin reset-password <user>` on the Pi. With the production setup, run it from the `deploy` folder. With the development setup, run `pnpm --filter @pond/server pond admin reset-password <user>`. It prints a temporary password, signs that user out everywhere and is audited. `--remove-2fa` also turns off their authenticator; an admin must set it up again at the next sign-in. Physical access to the device is the trust anchor: nothing in the web app can reset another person's password.
 
 ## Sessions

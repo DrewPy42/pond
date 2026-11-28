@@ -1,6 +1,7 @@
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
 import { IDLE_TIMEOUT_MS, REAUTH_WINDOW_MS, hasRecentReauth, sha256 } from './auth/sessions'
+import { recordBlockedAttempts } from './audit'
 import { Client, PASSWORD, bootstrapAdmin, createUser, makeEnv, totpNow } from './testing/harness'
 
 /**
@@ -371,6 +372,82 @@ describe('POST /api/auth/login', () => {
     expect((await c.post('/api/auth/login', { username: 'sam', password: PASSWORD })).status).toBe(
       200,
     )
+  })
+
+  /**
+   * Inputs:   failed sign-ins typing a made-up password as the username (until locked out), and
+   *           one for the real account "sam"
+   * Expected: entries keep the address and, for a real account, which account; the typed text
+   *           is nowhere in the log or the API's answer, for unknown and real names alike
+   */
+  it('never records what was typed as a username', async () => {
+    const env = makeEnv()
+    const admin = await bootstrapAdmin(env)
+    const sam = await createUser(env, admin, 'sam')
+    // First, while the address (the same for every test client) isn't waiting yet.
+    await new Client(env.app).post('/api/auth/login', {
+      username: 'sam',
+      password: 'wrong-password-123',
+    })
+    const stranger = new Client(env.app)
+    for (let i = 0; i < 5; i++)
+      await stranger.post('/api/auth/login', {
+        username: 'My-Typed-Secret-4711',
+        password: 'wrong-password-123',
+      })
+    const log = (await admin.client.get('/api/audit-log?limit=200')).body.entries
+    const raw = JSON.stringify(log).toLowerCase()
+    expect(raw).not.toContain('my-typed-secret')
+    const failures = log.filter((e: { action: string }) =>
+      ['auth.login_failed', 'auth.lockout'].includes(e.action),
+    )
+    // sam's one, the stranger's until refused, and the lockout.
+    expect(failures.length).toBeGreaterThanOrEqual(5)
+    for (const e of failures) expect(Object.keys(e.meta)).toEqual(['ip'])
+    expect(failures.filter((e: { targetId: string | null }) => e.targetId === sam.id)).toHaveLength(
+      1,
+    )
+  })
+
+  /**
+   * Inputs:   an address locked out, then 40 more tries during the wait with changing names, and
+   *           the log checked before and after the wait is over
+   * Expected: all 40 are refused and add nothing to the log one by one; once the wait is over
+   *           (with no further try) they become one entry with the address, the count and when
+   *           the first and last came, and nothing typed
+   */
+  it('sums up attempts blocked during a wait as one entry', async () => {
+    const env = makeEnv()
+    const c = new Client(env.app)
+    const attempt = (name: string) =>
+      c.post('/api/auth/login', { username: name, password: 'wrong-password-123' })
+    for (let i = 0; i < 5; i++) await attempt(`guess${i}`)
+    const logged = env.ctx.repos.audit.list({ limit: 200 }).length
+    const start = env.ctx.now().getTime()
+    for (let i = 0; i < 40; i++) {
+      env.advance(100)
+      expect((await attempt(`flood-name-${i}`)).status).toBe(429)
+    }
+    expect(env.ctx.repos.audit.list({ limit: 200 })).toHaveLength(logged)
+    expect(env.ctx.blocked.takeFinished(env.ctx.now().getTime())).toEqual([]) // still waiting
+
+    env.advance(31_000)
+    const done = env.ctx.blocked.takeFinished(env.ctx.now().getTime())
+    recordBlockedAttempts(env.ctx.repos.audit, done, env.ctx.now(), env.ctx.newId)
+    const entries = env.ctx.repos.audit.list({ limit: 200 })
+    expect(entries).toHaveLength(logged + 1)
+    expect(entries[0]).toMatchObject({
+      action: 'auth.attempts_blocked',
+      actorId: null,
+      meta: {
+        ip: expect.any(String),
+        count: 40,
+        first: new Date(start + 100).toISOString(),
+        last: new Date(start + 4000).toISOString(),
+      },
+    })
+    expect(JSON.stringify(entries)).not.toContain('flood-name')
+    expect(env.ctx.blocked.takeAll()).toEqual([])
   })
 
   /**

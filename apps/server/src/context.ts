@@ -1,4 +1,5 @@
 import type { Logger } from 'pino'
+import type { BlockedAttempts } from './auth/blockedAttempts.js'
 import type { LoginLimiter } from './auth/ratelimit.js'
 import type { Crypto } from './crypto/index.js'
 import type { SpaceRouteInfo } from './middleware/spaceRouter.js'
@@ -15,6 +16,8 @@ export interface AppContext {
   crypto: Crypto
   log: Logger
   limiter: LoginLimiter
+  /** Sign-in attempts refused during a wait, until they're written to the audit log. */
+  blocked: BlockedAttempts
   /** `Secure` flag on cookies. True in production; off for plain-HTTP local development. */
   cookieSecure: boolean
   now: () => Date
