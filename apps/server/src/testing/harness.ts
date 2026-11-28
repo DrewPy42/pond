@@ -11,6 +11,7 @@ import { backupPaths, type BackupPaths } from '../backup/paths.js'
 import { RestoreService } from '../backup/restore.js'
 import { createSafetyCopies } from '../backup/safety.js'
 import { BackupService } from '../backup/service.js'
+import { BlockedAttempts } from '../auth/blockedAttempts.js'
 import { LoginLimiter } from '../auth/ratelimit.js'
 import type { AppContext } from '../context.js'
 import { createCrypto } from '../crypto/index.js'
@@ -115,6 +116,7 @@ export function makeEnv(
     crypto,
     log,
     limiter: new LoginLimiter({ clock }),
+    blocked: new BlockedAttempts(),
     cookieSecure: false,
     now: () => new Date(t),
     newId,

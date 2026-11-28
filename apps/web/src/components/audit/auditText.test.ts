@@ -68,7 +68,7 @@ describe('auditLine(entry, names)', () => {
     expect(unknown).toEqual({
       what: 'Sign-in failed',
       who: 'Not signed in',
-      details: "for a username that doesn't exist · from 192.168.1.9",
+      details: "for a username that doesn't exist · address 192.168.1.9",
     })
     const known = auditLine(
       entry({
@@ -82,6 +82,35 @@ describe('auditLine(entry, names)', () => {
       names,
     )
     expect(known.details).toBe('for Sam')
+  })
+
+  /**
+   * Inputs:   a summary of 1,230 attempts from one address over four seconds, one of a single
+   *           attempt for addresses beyond the limit, and an unknown-name lockout
+   * Expected: the count, the times and the address in plain words; the lockout says the
+   *           username doesn't exist
+   */
+  it('sums up blocked attempts', () => {
+    const blocked = (meta: Record<string, unknown>) =>
+      auditLine(
+        entry({ actorType: 'system', actorId: null, action: 'auth.attempts_blocked', meta }),
+        names,
+      )
+    const first = '2030-01-01T12:00:01.000Z'
+    const last = '2030-01-01T12:00:05.000Z'
+    const at = (iso: string) => new Date(iso).toLocaleTimeString()
+    expect(blocked({ ip: '10.0.0.5', count: 1230, first, last })).toEqual({
+      what: 'Blocked more sign-in tries during a wait',
+      who: 'Not signed in',
+      details: `${(1230).toLocaleString()} blocked · from ${at(first)} to ${at(last)} · address 10.0.0.5`,
+    })
+    expect(blocked({ ip: null, count: 1, first, last: first }).details).toBe(
+      `1 blocked · at ${at(first)} · from other addresses`,
+    )
+    expect(
+      auditLine(entry({ actorType: 'system', actorId: null, action: 'auth.lockout' }), names)
+        .details,
+    ).toBe("for a username that doesn't exist")
   })
 
   /**

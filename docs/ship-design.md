@@ -24,7 +24,7 @@ As built:
 
 - The audit log screen, as "Activity log" in Settings. "Load more" now carries on from the last entry's time **and id**: before, entries sharing a time could be skipped. A guard test fails if an action is recorded without plain words for it.
 
-  Two limits found while building it, not changed: a failed sign-in records whatever was typed as the username (see `security.md`), and what an app records itself names the app, not the person.
+  Two limits found while building it. A failed sign-in recorded whatever was typed as the username: **fixed since** (see `security.md`, "Sign-in records"), along with summaries of attempts blocked during a wait. What an app records itself still names the app, not the person.
 
 Still to build in M9a: licence files, the install page and the stale text.
 

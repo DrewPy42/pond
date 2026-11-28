@@ -34,6 +34,23 @@ export function runMigrations(handle: DbHandle, dir = MIGRATIONS_DIR): void {
   migrate(handle.db, { migrationsFolder: dir })
 }
 
+/**
+ * Rebuilds the database file if a migration asked for it, so that text it removed doesn't stay
+ * in unused parts of the file, which backups would copy. SQLite can't do this inside a
+ * migration. The request is only cleared once the rebuild has worked, so a power cut or a full
+ * drive means it is tried again at the next start.
+ */
+export function compactIfAsked({ sqlite }: DbHandle): boolean {
+  const request =
+    "FROM settings WHERE scope = 'global' AND scope_id = '' AND key = 'system.compactNeeded'"
+  if (!sqlite.prepare(`SELECT 1 ${request}`).get()) return false
+  sqlite.exec('VACUUM')
+  sqlite.prepare(`DELETE ${request}`).run()
+  // Last: this also empties the write-ahead log, where the old pages were.
+  sqlite.pragma('wal_checkpoint(TRUNCATE)')
+  return true
+}
+
 interface JournalEntry {
   idx: number
   tag: string

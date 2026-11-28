@@ -43,8 +43,12 @@ const install = async (): Promise<BackupPaths> => {
   made.push(dir)
   return backupPaths(path.join(dir, 'data'))
 }
-const boot = async (paths: BackupPaths, migrate?: (db: DbHandle) => void) => {
-  const booted = await bootDatabase(paths, now, migrate)
+const boot = async (
+  paths: BackupPaths,
+  migrate?: (db: DbHandle) => void,
+  compact?: (db: DbHandle) => void,
+) => {
+  const booted = await bootDatabase(paths, now, migrate, compact)
   open.push(booted.db)
   return booted
 }
@@ -142,6 +146,82 @@ async function populated() {
   await files.put(ref, Buffer.from('a receipt'))
   return { paths, db, crypto, repos, ref }
 }
+
+describe('upgrading a log that holds typed usernames (real files)', () => {
+  const SECRET = 'zzsecret-typed-password-4711'
+  const holds = async (file: string) =>
+    (await fs.readFile(file).catch(() => Buffer.alloc(0))).includes(SECRET)
+
+  /** An install from before the change, with a log large enough to have spread over many pages. */
+  async function before() {
+    const paths = await install()
+    await fs.mkdir(paths.dataDir, { recursive: true })
+    const old = openDb(paths.dbPath)
+    migrateToVersion(old, 7)
+    const add = old.sqlite.prepare(
+      "INSERT INTO audit_log (id, at, actor_type, action, meta) VALUES (?, ?, 'system', 'auth.login_failed', ?)",
+    )
+    for (let i = 0; i < 1500; i++)
+      add.run(
+        String((i * 7919) % 1500).padStart(5, '0'),
+        `2030-01-01T${i % 24}`,
+        JSON.stringify({
+          username: i % 11 ? `someone${i}` : `${SECRET}${i}`,
+          ip: '10.0.0.1',
+        }),
+      )
+    old.close()
+    expect(await holds(paths.dbPath)).toBe(true)
+    return paths
+  }
+  const waiting = (db: DbHandle) =>
+    db.sqlite.prepare("SELECT 1 FROM settings WHERE key = 'system.compactNeeded'").get() !==
+    undefined
+
+  /**
+   * Function: bootDatabase (migration 8, then compactIfAsked)
+   * Inputs:   1500 failed sign-ins with typed names, some of them a made-up secret
+   * Expected: every entry is kept without its typed name, and the secret is in neither the
+   *           database file, its write-ahead log nor a new backup copy. Changing the rows alone
+   *           leaves it in all three
+   */
+  it('leaves no trace of the typed text in the database or in new backups', async () => {
+    const paths = await before()
+    const { db, cleanupFailed } = await boot(paths)
+    expect(cleanupFailed).toBe(false)
+    expect(waiting(db)).toBe(false)
+    const count = db.sqlite
+      .prepare('SELECT count(*) AS n FROM audit_log WHERE meta = \'{"ip":"10.0.0.1"}\'')
+      .get() as { n: number }
+    expect(count.n).toBe(1500)
+    expect(await holds(paths.dbPath)).toBe(false)
+    expect(await holds(`${paths.dbPath}-wal`)).toBe(false)
+    const copy = path.join(paths.dataDir, 'copy.db')
+    await createSqliteBackupDb(db).snapshot(copy)
+    expect(await holds(copy)).toBe(false)
+  })
+
+  /**
+   * Function: bootDatabase when the rebuild fails (a full drive, say)
+   * Inputs:   an upgrade whose rebuild throws, then an ordinary start
+   * Expected: Pond still starts and says the tidying didn't finish; the request is kept; the
+   *           next start does it, with no migration left to run
+   */
+  it('tries again at the next start if the rebuild fails', async () => {
+    const paths = await before()
+    const first = await boot(paths, undefined, () => {
+      throw new Error('disk full')
+    })
+    expect(first.cleanupFailed).toBe(true)
+    expect(waiting(first.db)).toBe(true)
+    first.db.close()
+
+    const second = await boot(paths)
+    expect(second.cleanupFailed).toBe(false)
+    expect(waiting(second.db)).toBe(false)
+    expect(await holds(paths.dbPath)).toBe(false)
+  })
+})
 
 describe('backup then restore on real SQLite', () => {
   /**

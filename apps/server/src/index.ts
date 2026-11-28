@@ -7,7 +7,9 @@ import { backupPaths } from './backup/paths.js'
 import { RestoreService } from './backup/restore.js'
 import { createSafetyCopies } from './backup/safety.js'
 import { BackupService } from './backup/service.js'
+import { BlockedAttempts } from './auth/blockedAttempts.js'
 import { LoginLimiter } from './auth/ratelimit.js'
+import { recordBlockedAttempts } from './audit.js'
 import { loadConfig } from './config.js'
 import { createCrypto, loadOrCreateMasterKey } from './crypto/index.js'
 import { newId } from './db/ids.js'
@@ -32,6 +34,8 @@ const paths = backupPaths(config.dataDir, config.backupDir)
 // First: a waiting restore replaces the database, key and files before anything opens them.
 const booted = await bootDatabase(paths, now)
 const db = booted.db
+if (booted.cleanupFailed)
+  log.warn('Pond could not finish tidying its database. It will try again at the next start.')
 if (booted.restore.kind === 'rolled_back')
   log.error('The restore could not be applied. Pond is running with the data it had before.')
 
@@ -112,11 +116,16 @@ const restores = new RestoreService({
     ),
 })
 
+const blocked = new BlockedAttempts()
+const saveBlocked = (tallies: ReturnType<BlockedAttempts['takeAll']>) =>
+  recordBlockedAttempts(repos.audit, tallies, new Date(), newId)
+
 const app = createApp({
   repos,
   crypto,
   log,
   limiter: new LoginLimiter(),
+  blocked,
   cookieSecure: config.cookieSecure,
   now: () => new Date(),
   newId,
@@ -196,12 +205,31 @@ const backupSchedule = startSyncScheduler({
     ),
 })
 
+// Written once an address's wait is over, whether or not it ever tries again.
+const blockedWrites = setInterval(() => {
+  try {
+    saveBlocked(blocked.takeFinished(Date.now()))
+  } catch (e) {
+    log.error(
+      { err: { name: (e as Error)?.name, message: (e as Error)?.message } },
+      'could not record blocked sign-in attempts',
+    )
+  }
+}, 60_000)
+blockedWrites.unref()
+
 function shutdown(signal: string) {
   padJobs.stop()
   backupSchedule.stop()
   log.info({ signal }, 'shutting down')
   scheduler.stop()
   server.close(() => {
+    clearInterval(blockedWrites)
+    try {
+      saveBlocked(blocked.takeAll()) // waits that aren't over yet are written as they stand
+    } catch {
+      log.error('could not record blocked sign-in attempts while stopping')
+    }
     db.close()
     process.exit(0)
   })
