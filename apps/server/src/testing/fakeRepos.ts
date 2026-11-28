@@ -247,9 +247,11 @@ export function createFakeRepos(now: () => Date = () => new Date(), schemaVersio
 
     audit: {
       add: (e) => void audit.push({ ...e }),
-      list: ({ limit, before }) =>
+      list: ({ limit, before, beforeId }) =>
         audit
-          .filter((e) => !before || e.at < before)
+          .filter(
+            (e) => !before || e.at < before || (!!beforeId && e.at === before && e.id < beforeId),
+          )
           .sort((a, b) => (a.at === b.at ? (a.id < b.id ? 1 : -1) : a.at < b.at ? 1 : -1))
           .slice(0, limit),
     },

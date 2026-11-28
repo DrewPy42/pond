@@ -422,6 +422,32 @@ export function repoContract(label: string, make: () => Repos): void {
     })
   })
 
+  describe(`${label}: AuditRepo paging`, () => {
+    /**
+     * Function: audit.list({ limit, before, beforeId })
+     * Inputs:   one entry at 11:00, then three recorded in the same millisecond (as a lockout is
+     *           with the failed sign-in that caused it), read two at a time, each page starting
+     *           after the last entry of the one before
+     * Expected: every entry appears exactly once, newest first; none is skipped where a page
+     *           ends between entries with the same time
+     */
+    it('pages through entries that share a time without skipping any', () => {
+      const r = make()
+      r.audit.add(audit({ id: 'a1', at: '2030-01-01T11:00:00.000Z' }))
+      for (const id of ['a3', 'a2', 'a4'])
+        r.audit.add(audit({ id, at: '2030-01-01T12:00:00.000Z' }))
+      const seen: string[] = []
+      let last: { at: string; id: string } | undefined
+      for (let page = 0; page < 5; page++) {
+        const entries = r.audit.list({ limit: 2, before: last?.at, beforeId: last?.id })
+        if (!entries.length) break
+        seen.push(...entries.map((e) => e.id))
+        last = entries.at(-1)
+      }
+      expect(seen).toEqual(['a4', 'a3', 'a2', 'a1'])
+    })
+  })
+
   /** Two Spaces (S1, S2) and one account in each (A1 in S1, A2 in S2). */
   const ledgerWorld = () => {
     const r = make()

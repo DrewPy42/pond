@@ -16,7 +16,7 @@ Pond holds a household's complete financial picture, plus SSNs and EINs for busi
 | Bad or tampered update | Signed release images; automatic backup before migrations |
 | Malicious LilyPad | v1 runs official pads only; API built for later isolation |
 | Injection, XSS | zod validation; Drizzle only; strict CSP; no `v-html` with user data |
-| Not knowing what happened | Audit log; secrets never logged |
+| Not knowing what happened | Audit log, which admins can read in Settings → Activity log (newest first, read only). The screen shows only chosen details of each entry. **A failed sign-in records the username as typed,** so a password typed in that box by mistake is stored and the log's API returns it to admins; the screen never shows a username that isn't an account's |
 
 ## Authentication
 

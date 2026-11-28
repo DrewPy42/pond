@@ -174,8 +174,11 @@ export interface AuditRecord {
 }
 export interface AuditRepo {
   add(entry: AuditRecord): void
-  /** Newest first. `before` is an ISO timestamp (exclusive). */
-  list(opts: { limit: number; before?: string }): AuditRecord[]
+  /**
+   * Newest first. To continue after an entry, pass its time as `before` and its id as
+   * `beforeId`: entries can share a time. With `before` alone, everything at that time is left out.
+   */
+  list(opts: { limit: number; before?: string; beforeId?: string }): AuditRecord[]
 }
 
 // ---------- Ledger (M2) ----------

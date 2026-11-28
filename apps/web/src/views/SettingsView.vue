@@ -2,6 +2,7 @@
 import type { ConnectionView } from '@pond/shared'
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
+import ActivityLogPanel from '../components/audit/ActivityLogPanel.vue'
 import BackupsPanel from '../components/backups/BackupsPanel.vue'
 import ConnectBankDialog from '../components/connections/ConnectBankDialog.vue'
 import ConnectionCard from '../components/connections/ConnectionCard.vue'
@@ -79,6 +80,9 @@ async function connected(c: ConnectionView) {
 
     <v-divider class="my-6" />
     <BackupsPanel />
+
+    <v-divider class="my-6" />
+    <ActivityLogPanel />
   </template>
 
   <template v-if="canManageSpace && spaces.active">

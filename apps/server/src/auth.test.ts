@@ -555,6 +555,14 @@ describe('GET /api/audit-log (and what is written to it)', () => {
     expect(raw).not.toContain('wrong-password-123')
     expect(raw).not.toContain(admin.secret!)
 
+    const first = await admin.client.get('/api/audit-log?limit=1')
+    const [newest] = first.body.entries
+    const next = await admin.client.get(
+      `/api/audit-log?limit=1&before=${encodeURIComponent(newest.at)}&beforeId=${newest.id}`,
+    )
+    expect(next.body.entries).toHaveLength(1)
+    expect(next.body.entries[0].id).not.toBe(newest.id) // carries on, though the times can match
+
     expect((await sam.client.get('/api/audit-log')).status).toBe(403)
     expect((await new Client(env.app).get('/api/audit-log')).status).toBe(401)
   })
