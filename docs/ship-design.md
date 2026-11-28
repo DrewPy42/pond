@@ -22,7 +22,11 @@ As built:
 
 - rclone and online backups are removed (`simple-setup-design.md`).
 
-Still to build in M9a: the audit log screen, licence files, the install page and the stale text.
+- The audit log screen, as "Activity log" in Settings. "Load more" now carries on from the last entry's time **and id**: before, entries sharing a time could be skipped. A guard test fails if an action is recorded without plain words for it.
+
+  Two limits found while building it, not changed: a failed sign-in records whatever was typed as the username (see `security.md`), and what an app records itself names the app, not the person.
+
+Still to build in M9a: licence files, the install page and the stale text.
 
 ## Where things stand
 

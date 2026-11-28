@@ -420,11 +420,20 @@ export function createDrizzleRepos(
           .insert(auditLog)
           .values({ ...e, createdAt: iso() })
           .run(),
-      list: ({ limit, before }) =>
+      list: ({ limit, before, beforeId }) =>
         db
           .select()
           .from(auditLog)
-          .where(before ? lt(auditLog.at, before) : undefined)
+          .where(
+            !before
+              ? undefined
+              : beforeId
+                ? or(
+                    lt(auditLog.at, before),
+                    and(eq(auditLog.at, before), lt(auditLog.id, beforeId)),
+                  )
+                : lt(auditLog.at, before),
+          )
           .orderBy(desc(auditLog.at), desc(auditLog.id))
           .limit(limit)
           .all()
