@@ -211,6 +211,11 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
           VALUES ('personal', 's1', 'u1', '2030-01-01T00:00:00Z');
         INSERT INTO lilypad_migrations (pad_id, name, applied_at) VALUES ('personal', '0001_init', '2030-01-01T00:00:00Z');
         INSERT INTO lilypad_job_runs (pad_id, job_name, space_id, last_run_at) VALUES ('personal', 'rollup', 's1', '2030-01-01T06:00:00Z');
+        INSERT INTO settings (scope, scope_id, key, value) VALUES
+          ('global', '', 'backup.instanceId', '"0123456789ab"'),
+          ('global', '', 'backup.remote', '"v1:stub-sign-in"'),
+          ('global', '', 'backup.remoteInfo', '{"type":"dropbox","folder":"Pond","enabled":true,"paused":false}'),
+          ('global', '', 'backup.schedule', '{"enabled":true,"frequency":"daily","time":"02:00","weekday":0}');
       `)
     },
     verify(db) {
@@ -228,6 +233,32 @@ export const SCHEMA_FIXTURES: SchemaFixture[] = [
         const n = one<{ n: number }>(db, `SELECT count(*) AS n FROM ${t}`).n
         if (n !== expected) throw new Error(`${t} lost or gained rows: ${n}`)
       }
+      // v7 deletes the saved online storage settings, and nothing else.
+      const kept = db
+        .prepare("SELECT key, value FROM settings WHERE key LIKE 'backup.%' ORDER BY key")
+        .all()
+      const expected = [
+        { key: 'backup.instanceId', value: '"0123456789ab"' },
+        {
+          key: 'backup.schedule',
+          value: '{"enabled":true,"frequency":"daily","time":"02:00","weekday":0}',
+        },
+      ]
+      if (JSON.stringify(kept) !== JSON.stringify(expected))
+        throw new Error(`backup settings after the upgrade: ${JSON.stringify(kept)}`)
+    },
+  },
+  {
+    version: 7,
+    description: 'M9a: online storage removed',
+    seed(db) {
+      db.prepare(
+        "INSERT INTO settings (scope, scope_id, key, value) VALUES ('global', '', 'backup.keep', '7')",
+      ).run()
+    },
+    verify(db) {
+      const row = one<{ value: string }>(db, "SELECT value FROM settings WHERE key = 'backup.keep'")
+      if (row.value !== '7') throw new Error(`settings row changed: ${row.value}`)
     },
   },
 ]

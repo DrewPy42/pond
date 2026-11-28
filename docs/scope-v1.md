@@ -12,7 +12,7 @@
 - LilyPad API, official LilyPads only
 - Personal Finance and Business Manager LilyPads
 - Core reports + LilyPad reports
-- Encrypted backups: download, mounted folder (NAS/USB), rclone remote
+- Encrypted backups: download and mounted folder (NAS/USB)
 - Restore that overwrites everything
 - Security baseline (`security.md`): passwords + TOTP, encrypted secrets, audit log
 - Home network only; Docker on a Raspberry Pi; SQLite
@@ -30,7 +30,7 @@
 - Optional startup passphrase that locks the master key (notes in `future.md`)
 - Community verified and unverified LilyPads, isolation runtime, signing, submission process
 - LilyPad dependencies on other LilyPads
-- Built-in Google Drive, Dropbox, Box backup buttons
+- Automatic online (off-site) backups, including Google Drive, Dropbox and Box
 - Restore that merges without loss or duplicates
 - Remote access via Tailscale
 - One-click updates with automatic rollback
@@ -55,7 +55,7 @@ Each milestone ends with working, tested software.
 | M6 | Business pad | Port business_manager: profile, Schedule C reports, people and salary (SSN masked + reveal), documents |
 | M7 | Reports | Cash flow, spending by category, net worth over time, LilyPad reports listed in core Reports |
 | M8a | Backups | Backup format, schedule, download and folder, retention, safety copies, full-overwrite restore (also on a new install), password reset command |
-| M8b | Backup remotes | rclone destinations, with allow-listed remote types and settings |
+| M8b | Backup remotes | Built (rclone destinations), then **removed in M9a** as too complicated to set up (`simple-setup-design.md`) |
 | M9a | Installable | Production image that serves the web app, runs as a normal user and builds on the Pi; compose with Caddy HTTPS; audit log screen; licence files; install docs. See `ship-design.md` |
 | M9b | Releases | Tested and signed arm64 + amd64 images, versions, update-available notice. Version 1.0.0 only after the checks on a real Pi |
 

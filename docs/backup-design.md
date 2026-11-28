@@ -1,6 +1,8 @@
 # Backups and restore (M8): design
 
-**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end). M8b is built too (see "As built (M8b)").** This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
+**Status: approved 2026-11-24. M8a is built (see "As built (M8a)" at the end). M8b is built too (see "As built (M8b)").**
+
+**Changed 2026-11-27: M8b (online backups through rclone) has been removed.** Everything below about rclone and remotes is history. See `simple-setup-design.md`. This turns `backup-restore.md` into a design that can be built. It keeps that spec's shape and says where I'd change it, and why.
 
 A backup holds **everything**: all financial data, the files, and the master key that unlocks the encrypted fields. Restore **replaces** everything. Both need your explicit review.
 

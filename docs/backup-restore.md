@@ -23,8 +23,10 @@ files/             uploaded files (e.g. Business documents), still encrypted wit
 ## Triggers
 
 - **On demand:** Settings → Backups (password re-check).
-- **Scheduled:** daily or weekly at a chosen time, to the backup folder, the online storage or both. Defaults: daily at 02:00, keep 14. A run missed while Pond was off happens once, after it starts.
+- **Scheduled:** daily or weekly at a chosen time, to the backup folder. If the schedule is on and the folder is off, admins are warned until one of them changes. Defaults: daily at 02:00, keep 14. A run missed while Pond was off happens once, after it starts.
 - For each destination, admins see a warning when its last scheduled backup failed, or its newest good one is older than 3 days (10 for weekly).
+
+There is no automatic off-site backup. A backup kept at home won't survive a fire or theft, so download one now and then and keep it somewhere else; it's already encrypted. (Online backups through rclone were built in M8b and removed in M9a: `simple-setup-design.md`.)
 
 ## Safety copies
 
@@ -36,7 +38,6 @@ Taken automatically **before core or LilyPad migrations** (database) and **befor
 |---|---|
 | Download | Browser download of the file |
 | Folder | Only the one folder mounted at `/backups` (`POND_BACKUP_DIR`), such as a NAS share or USB drive. The app has no path box. A marker file written when it is turned on must be there, so an unplugged drive makes backups fail instead of filling the SD card |
-| Online storage (rclone) | One remote and folder: Google Drive, Dropbox, Box, OneDrive, S3-compatible or Backblaze B2. The admin pastes the output of `rclone config show`. Only listed settings are accepted, they are encrypted at rest, and rclone only uploads, lists and deletes in that folder. An upload counts once the storage lists it at the same size |
 
 Tidying old copies deletes only files with this install's own backup names, and only after a newer backup has passed its check. Built-in Google Drive, Dropbox and Box buttons come later.
 
@@ -51,9 +52,8 @@ Tidying old copies deletes only files with this install's own backup names, and 
 4. The screen shows what's inside. The admin confirms (password re-check) that **everything currently in Pond will be replaced**.
 5. Pond takes a safety copy, marks the restore ready and stops itself.
 6. At the next start, before opening the database, it swaps the staged data in. A journal records each step, so a power cut finishes or undoes the swap. If the restored database won't open, the old data is put back.
-7. Everyone is signed out, and the restore is written to the restored audit log. **Online storage is paused** until an admin turns it back on, so a restored copy can't delete the original's backups.
+7. Everyone is signed out, and the restore is written to the restored audit log.
 
-To restore from online storage, download the file from the service yourself, then upload it.
 
 ## Later: merge restore
 

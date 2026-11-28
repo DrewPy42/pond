@@ -20,7 +20,9 @@ As built:
 
 - The first-run setup code is removed (`simple-setup-design.md`). **For the install page:** set Pond up as soon as it starts, never forward ports, and say how to erase a Pond someone else set up.
 
-Still to build in M9a: removing rclone (`simple-setup-design.md`), the audit log screen, licence files, the install page and the stale text.
+- rclone and online backups are removed (`simple-setup-design.md`).
+
+Still to build in M9a: the audit log screen, licence files, the install page and the stale text.
 
 ## Where things stand
 
@@ -72,7 +74,7 @@ The design first recommended Node 24 without saying that Node 26 had already bec
 
 ### The production image
 
-- One multi-stage `deploy/Dockerfile`: install, build the web app, then a runtime stage with production dependencies only. It reuses the pinned rclone stage.
+- One multi-stage `deploy/Dockerfile`: install, build the web app, then a runtime stage with production dependencies only.
 - The base image is pinned by digest.
 - **The server serves the built web app** in production: static files, and `index.html` for page addresses. `/api` is never answered with a page. Files with hashed names are cached for a long time; `index.html` isn't. The security headers apply to both, and the content policy is checked in a real browser.
 - `tsx` runs the TypeScript, as it has in every test so far. Compiling would be a second way of running the code, with its own failures. **Start-up time and memory are measured on the Pi;** if they're poor, we revisit.
@@ -100,7 +102,7 @@ The design first recommended Node 24 without saying that Node 26 had already bec
 ### Also in M9a
 
 - **Audit log screen:** admin only, newest first, "load more", plain names for actions. No filters or export. It shows only what the route already returns, which never holds secrets.
-- **Licences:** the root `LICENSE`, and a notices file in the image for what it ships, including rclone's.
+- **Licences:** the root `LICENSE`, and a notices file in the image for what it ships.
 - **Install page** (`docs/install.md`): from a fresh Pi to a first backup, then updating, password reset and restoring after a dead drive. It recommends an SSD and says a good drive isn't a backup.
 - **Stale text:** README status, and the old theme wording in `scope-v1.md`.
 
@@ -110,7 +112,7 @@ The design first recommended Node 24 without saying that Node 26 had already bec
 
 - Pushing a version tag starts a workflow. **Only you create tags,** so only you publish a release.
 - It builds **arm64 and amd64 on matching machines,** which GitHub offers free to public repositories, so nothing is emulated.
-- **Release gate:** for each architecture, start the built image; load the web page and `/api/health`; open a database from each earlier schema version and migrate it; make a backup, restore it and restart; check rclone's version and that the user isn't root. **Nothing is published unless both pass.**
+- **Release gate:** for each architecture, start the built image; load the web page and `/api/health`; open a database from each earlier schema version and migrate it; make a backup, restore it and restart; check that the user isn't root. **Nothing is published unless both pass.**
 - Images go to GitHub's registry and are signed with cosign using the workflow's identity, so there is no signing key to store or lose. The signature is recorded in a public log, which is fine for a public project.
 - Actions used by the release workflow are pinned to exact commits.
 - **The owner name** (`DrewPy42`, or a WibbitWorks organization) is built into every install. Changing it later means every user edits their setup, so choose before the first release.
@@ -142,7 +144,7 @@ These can't be proved on a Mac. Each gets a recorded result.
 3. **Backup memory use and how long the server pauses,** at the current passphrase strength. Adjust it if needed.
 4. Restore with the automatic restart, and restore onto a freshly installed Pi.
 5. A USB drive: writing, unplugging it (the backup must fail loudly) and a reboot.
-6. One real upload for each online service you'll use, then download and check it with restore, stopping before confirming.
+6. ~~One real upload for each online service.~~ Not needed: online backups were removed.
 7. **SimpleFIN with a real account:** confirm request limits and history depth (open since M3).
 8. Cut the power while Pond is running, and during a restore.
 9. Update from one `0.9` release to the next.
@@ -180,14 +182,14 @@ Found by the trial, and since fixed: the setup code was hard to find (removed), 
 
 | Risk | Defence |
 |---|---|
-| A tampered or broken release | Signed images, a release gate on both architectures, tags created only by you, pinned base images, rclone and release actions |
-| Pinned parts go out of date | The release page lists Node, Caddy and rclone to review at every release |
+| A tampered or broken release | Signed images, a release gate on both architectures, tags created only by you, pinned base images and release actions |
+| Pinned parts go out of date | The release page lists Node and Caddy to review at every release |
 | Pond exposed to the internet | Only Caddy listens, with a local certificate; the install page says not to forward ports |
 | A weak spot in the container | Normal user, read-only filesystem, no extra privileges |
 
 ## Not in M9
 
-One-click updates and automatic rollback, a ready-made Pi image with disk encryption, remote access, the website, guided online storage setup (M8c, proposed separately in `guided-setup-design.md`).
+One-click updates and automatic rollback, a ready-made Pi image with disk encryption, remote access, the website.
 
 ## What I need from you
 

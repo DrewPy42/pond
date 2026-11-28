@@ -21,7 +21,7 @@ Or with Docker: `docker compose -f docker-compose.dev.yml up`. The Docker develo
 
 ## Backups and recovery
 
-Set up backups in Settings → Backups. In Docker, mount the drive or share for backups at `/backups`. For online storage, the Docker image includes rclone; you make the sign-in with rclone on your own computer and paste it into Pond. When dependencies change, rebuild the development container:
+Set up backups in Settings → Backups. In Docker, mount the drive or share for backups at `/backups`. A backup kept at home won't survive a fire or theft, so also download one now and then and keep it somewhere else. When dependencies change, rebuild the development container:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build --renew-anon-volumes

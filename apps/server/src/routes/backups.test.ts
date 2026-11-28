@@ -303,7 +303,7 @@ describe('BackupService.runDue() and warnings', () => {
       code: 'folder_marker_missing',
     })
     expect(w.env.ctx.backups.warnings()).toMatchObject([
-      { destination: 'folder', kind: 'failed', reason: 'folder_marker_missing' },
+      { kind: 'failed', reason: 'folder_marker_missing' },
     ])
     await fs.writeFile(marker, '')
     w.env.advance(1000)
@@ -321,9 +321,7 @@ describe('BackupService.runDue() and warnings', () => {
     w.env.advance(2 * DAY)
     expect(w.env.ctx.backups.warnings()).toEqual([])
     w.env.advance(2 * DAY)
-    expect(w.env.ctx.backups.warnings()).toEqual([
-      { destination: 'folder', kind: 'stale', lastSuccessAt: null },
-    ])
+    expect(w.env.ctx.backups.warnings()).toEqual([{ kind: 'stale', lastSuccessAt: null }])
 
     const weekly = await world()
     await weekly.settings({}, { enabled: true, frequency: 'weekly' })
@@ -335,6 +333,61 @@ describe('BackupService.runDue() and warnings', () => {
     const off = await world()
     off.env.advance(30 * DAY)
     expect(off.env.ctx.backups.warnings()).toEqual([])
+  })
+
+  /**
+   * Inputs:   the state an install that only used online storage is left in after the upgrade: a
+   *           daily schedule that is on and overdue, with the backup folder off
+   * Expected: a "no_destination" warning at once; the due run does nothing and leaves the
+   *           schedule on. Turning the folder on clears the warning
+   */
+  it('warns when the schedule has nowhere to save, until the folder is on', async () => {
+    const w = await world()
+    w.env.ctx.repos.settings.set('global', '', 'backup.schedule', {
+      enabled: true,
+      frequency: 'daily',
+      time: '02:00',
+      weekday: 0,
+    })
+    // Last run two days before the test clock, so a run is due now.
+    w.env.ctx.repos.settings.set('global', '', 'backup.status', {
+      scheduleRanAt: '2025-12-30T00:00:00.000Z',
+    })
+    expect(w.env.ctx.backups.warnings()).toEqual([{ kind: 'no_destination' }])
+    expect(await w.env.ctx.backups.runDue()).toBe(false)
+    expect(w.audits().map((a) => a.action)).not.toContain('backup.created')
+    expect((await w.env.ctx.backups.view()).schedule.enabled).toBe(true)
+    await w.reauth()
+    await w.settings({}, { enabled: true })
+    expect(w.env.ctx.backups.warnings()).toEqual([])
+  })
+
+  /**
+   * Inputs:   the same state, saved with automatic backups turned off
+   * Expected: accepted without a folder, and the warning goes
+   */
+  it('lets a schedule with nowhere to save be turned off', async () => {
+    const w = await world({ folder: false })
+    w.env.ctx.repos.settings.set('global', '', 'backup.schedule', {
+      enabled: true,
+      frequency: 'daily',
+      time: '02:00',
+      weekday: 0,
+    })
+    const res = await w.settings({ folderEnabled: false }, { enabled: false })
+    expect(res.status).toBe(200)
+    expect(res.body.warnings).toEqual([])
+  })
+
+  /**
+   * Inputs:   the old online storage routes and destination
+   * Expected: the routes are gone, and "remote" is not a destination
+   */
+  it('has no online storage left to call', async () => {
+    const w = await world()
+    expect((await w.admin.client.put('/api/backups/remote', { folder: 'x' })).status).toBe(404)
+    const run = await w.admin.client.post('/api/backups/run', { destination: 'remote' })
+    expect(run.status).toBe(400)
   })
 
   /**
@@ -577,15 +630,15 @@ describe('/api/setup/restore (a brand-new install)', () => {
   })
 
   /**
-   * Inputs:   a backup whose header asks for work factor 19 (Pond writes 18), checked on a new
-   *           install and then by a signed-in admin
-   * Expected: the new install refuses it from the header alone, as asking for too much memory;
-   *           signed in, the higher limit lets it past that check
+   * Inputs:   a made-up backup header asking for work factor 19 (Pond writes 18), with a salt too
+   *           short to be real, checked on a new install and then by a signed-in admin
+   * Expected: the new install refuses it from the header alone, as asking for too much memory.
+   *           Signed in, the higher limit lets it past that check, and the encryption library
+   *           rejects the salt. The salt keeps the test quick: with a real one this would do the
+   *           costly passphrase work, which timed out on a slower CI machine
    */
   it('refuses a backup that asks for more memory than Pond writes', async () => {
-    const costly = Buffer.from(
-      'age-encryption.org/v1\n-> scrypt AAAAAAAAAAAAAAAAAAAAAA 19\nAAAA\n--- AAAA\n',
-    )
+    const costly = Buffer.from('age-encryption.org/v1\n-> scrypt AAAA 19\nAAAA\n--- AAAA\n')
     const env = await fresh()
     const id = await send(env, costly)
     const res = await checkIt(env, id, 'any passphrase at all')
@@ -598,6 +651,6 @@ describe('/api/setup/restore (a brand-new install)', () => {
       uploadId: up.body.uploadId,
       passphrase: 'any passphrase at all',
     })
-    expect(signedIn.body.message ?? '').not.toContain('more memory')
+    expect(signedIn.body.error).toBe('damaged_backup')
   })
 })

@@ -22,7 +22,7 @@ watch(() => route.path, load)
 
 <template>
   <v-alert v-if="backupWarnings.length" type="warning" class="mb-4">
-    <div v-for="w in backupWarnings" :key="`${w.destination}-${w.kind}`">{{ warningText(w) }}</div>
+    <div v-for="w in backupWarnings" :key="w.kind">{{ warningText(w) }}</div>
     <router-link v-if="route.name !== 'settings'" to="/settings" class="banner-link">
       Check backups
     </router-link>
